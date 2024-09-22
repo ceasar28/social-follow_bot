@@ -536,7 +536,7 @@ export class SocialBotService {
               chatIds.forEach(async (chatId) => {
                 await this.socialBot.sendMessage(
                   chatId,
-                  `Follow alert  🚨:\n\n<a href="https://www.instagram.com/${newFollow.username}">@${newFollow.username}</a> followed @${account} twitter account`,
+                  `Follow alert  🚨:\n\n<a href="https://www.instagram.com/${newFollow.username}">@${newFollow.username}</a> followed @${account} instagram account`,
                   { parse_mode: 'HTML' },
                 );
               });
@@ -586,7 +586,7 @@ export class SocialBotService {
 
   // @Cron('*/30 * * * *')
   @Cron(`${process.env.CRON}`)
-  async handleTwitterCron() {
+  async handleInstagramCron() {
     const jobRunning = await this.InstagramJobModel.find();
     if (jobRunning[0].isJobRunning) {
       // If a job is already running, exit early to prevent data pollution
