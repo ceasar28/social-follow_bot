@@ -1,19 +1,19 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import * as TelegramBot from 'node-telegram-bot-api';
-import { TwitterAccount } from './schemas/twitter.accounts.schema';
+import { InstagramAccount } from './schemas/instagram.accounts.schema';
 import { Model } from 'mongoose';
 import { HttpService } from '@nestjs/axios';
 import { User } from './schemas/users.schema';
 import {
   menuMarkup,
-  viewTwitterAccount,
+  viewInstagramAccount,
   welcomeMessageMarkup,
 } from './markups';
 import * as dotenv from 'dotenv';
 
 import { Cron } from '@nestjs/schedule';
-import { TwitterJob } from './schemas/job.schema';
+import { InstagramJob } from './schemas/job.schema';
 
 dotenv.config();
 
@@ -26,22 +26,22 @@ export class SocialBotService {
 
   constructor(
     private readonly httpService: HttpService,
-    @InjectModel(TwitterAccount.name)
-    private readonly TwitterAccountModel: Model<TwitterAccount>,
+    @InjectModel(InstagramAccount.name)
+    private readonly InstagramAccountModel: Model<InstagramAccount>,
     @InjectModel(User.name) private readonly UserModel: Model<User>,
-    @InjectModel(TwitterJob.name)
-    private readonly TwitterJobModel: Model<TwitterJob>,
+    @InjectModel(InstagramJob.name)
+    private readonly InstagramJobModel: Model<InstagramJob>,
   ) {
     this.socialBot = new TelegramBot(token, { polling: true });
     this.socialBot.on('message', this.handleRecievedMessages);
     this.socialBot.on('callback_query', this.handleButtonCommands);
-    this.TwitterJobModel.deleteMany({});
-    this.createTwitterJobData();
+    this.InstagramJobModel.deleteMany({});
+    this.createInstagramJobData();
   }
 
-  createTwitterJobData = async () => {
-    await this.TwitterJobModel.deleteMany({});
-    await this.TwitterJobModel.create({ isJobRunning: false });
+  createInstagramJobData = async () => {
+    await this.InstagramJobModel.deleteMany({});
+    await this.InstagramJobModel.create({ isJobRunning: false });
   };
 
   handleRecievedMessages = async (
@@ -52,12 +52,12 @@ export class SocialBotService {
       await this.socialBot.sendChatAction(msg.chat.id, 'typing');
       function extractPlatformAndUsername(text) {
         // Adjusted regex pattern to match the username with more characters and optional whitespace
-        const regex = /\/(twitter|tiktok)\s*@([\w.]+)/;
+        const regex = /\/(twitter|tiktok|instagram)\s*@([\w.]+)/;
         const match = text.match(regex);
 
         if (match) {
           return {
-            platform: match[1], // "twitter" or "tiktok"
+            platform: match[1], // "twitter" or "tiktok" or "instagram"
             username: match[2], // The username after "@"
           };
         } else {
@@ -66,7 +66,7 @@ export class SocialBotService {
       }
 
       const addMatch = extractPlatformAndUsername(msg.text.trim());
-      const delRegex = /^\/del\s+(twitter|tiktok)\s+(@\w+)$/;
+      const delRegex = /^\/del\s+(twitter|tiktok|instagram)\s+(@\w+)$/;
       const delMatch = msg.text.trim().match(delRegex);
 
       if (msg.text.trim() === '/start') {
@@ -89,21 +89,21 @@ export class SocialBotService {
           reply_markup: replyMarkup,
         });
       } else if (addMatch) {
-        if (addMatch.platform === 'twitter') {
+        if (addMatch.platform === 'instagram') {
           //TODO: VERIFY USERNAME BEFORE SAVING
-          const validAccount: any = await this.validateTwitterAccount(
+          const validAccount: any = await this.validateInstagramAccount(
             addMatch.username,
             msg.chat.id,
           );
           if (validAccount.accountId) {
-            const account = await this.TwitterAccountModel.findOne({
-              twitterAccount: `${validAccount.twitterAccount}`,
+            const account = await this.InstagramAccountModel.findOne({
+              instagramAccount: `${validAccount.instagramAccount}`,
             });
             if (account) {
               console.log(account);
               return await this.socialBot.sendMessage(
                 msg.chat.id,
-                `@${addMatch.username} twitter will be monitored.`,
+                `@${addMatch.username} instagram will be monitored.`,
               );
             }
             return;
@@ -114,18 +114,19 @@ export class SocialBotService {
         }
         return;
       } else if (delMatch) {
-        const platform = delMatch[1]; // This is either 'twitter' or 'tiktok'
+        const platform = delMatch[1]; // This is either 'twitter' or 'tiktok' or username
         const username = delMatch[2]; // This is the @username
-        if (platform == 'twitter') {
-          const deletedAccount = await this.twitterRemoveTrackerChatIdOrDelete(
-            username.slice(1),
-            msg.chat.id,
-          );
+        if (platform == 'instagram') {
+          const deletedAccount =
+            await this.instagramRemoveTrackerChatIdOrDelete(
+              username.slice(1),
+              msg.chat.id,
+            );
 
           if (deletedAccount) {
             return await this.socialBot.sendMessage(
               msg.chat.id,
-              `${deletedAccount.twitterAccount} has been removed`,
+              `${deletedAccount.instagramAccount} has been removed`,
             );
           }
           return await this.socialBot.sendMessage(
@@ -195,36 +196,37 @@ export class SocialBotService {
             return;
           }
 
-        case '/trackX':
+        case '/trackInsta':
           try {
             await this.socialBot.sendChatAction(chatId, 'typing');
             console.log('hey');
 
-            return await this.twitterUsernameInput(chatId);
+            return await this.instagramUsernameInput(chatId);
           } catch (error) {
             console.log(error);
             return;
           }
 
-        case '/viewX':
+        case '/viewInsta':
           try {
             await this.socialBot.sendChatAction(chatId, 'typing');
             console.log('hey');
-            const twitterAccounts = await this.TwitterAccountModel.find({
+            const instagramAccounts = await this.InstagramAccountModel.find({
               trackerChatId: { $in: [chatId] },
             });
 
-            const allTwitteraccounts = [...twitterAccounts];
-            const twitterMarkup = await viewTwitterAccount(allTwitteraccounts);
-            const twitterReplyMarkup = {
-              inline_keyboard: twitterMarkup.keyboard,
+            const allInstagramaccounts = [...instagramAccounts];
+            const instagramMarkup =
+              await viewInstagramAccount(allInstagramaccounts);
+            const instagramReplyMarkup = {
+              inline_keyboard: instagramMarkup.keyboard,
             };
 
             return await this.socialBot.sendMessage(
               chatId,
-              twitterMarkup.message,
+              instagramMarkup.message,
               {
-                reply_markup: twitterReplyMarkup,
+                reply_markup: instagramReplyMarkup,
               },
             );
           } catch (error) {
@@ -254,9 +256,9 @@ export class SocialBotService {
     }
   };
 
-  twitterUsernameInput = async (chatId: number) => {
+  instagramUsernameInput = async (chatId: number) => {
     try {
-      await this.socialBot.sendMessage(chatId, '/twitter @username', {
+      await this.socialBot.sendMessage(chatId, '/instagram @username', {
         reply_markup: {
           force_reply: true,
         },
@@ -284,36 +286,40 @@ export class SocialBotService {
     }
   };
 
-  validateTwitterAccount = async (username: string, chatId: number) => {
+  validateInstagramAccount = async (username: string, chatId: number) => {
     try {
       // Check if the account is already monitored
-      const twitterAccount = await this.TwitterAccountModel.findOne({
-        twitterAccount: username,
+      const instagramAccount = await this.InstagramAccountModel.findOne({
+        instagramAccount: username,
       });
 
-      if (twitterAccount && +twitterAccount.trackerChatId.includes(chatId)) {
+      if (
+        instagramAccount &&
+        +instagramAccount.trackerChatId.includes(chatId)
+      ) {
         return await this.socialBot.sendMessage(
           chatId,
-          `You are already monitoring @${username} Twitter account.`,
+          `You are already monitoring @${username} Instagram account.`,
         );
-      } else if (twitterAccount) {
-        await this.TwitterAccountModel.updateOne(
+      } else if (instagramAccount) {
+        await this.InstagramAccountModel.updateOne(
           {
-            twitterAccount: twitterAccount.twitterAccount,
+            instagramAccount: instagramAccount.instagramAccount,
           },
-          { trackerChatId: [...twitterAccount.trackerChatId, chatId] },
+          { trackerChatId: [...instagramAccount.trackerChatId, chatId] },
           //   { new: true, useFindAndModify: false },
         );
         return {
           trackerChatId: chatId,
-          twitterAccount: twitterAccount.twitterAccount,
-          accountId: twitterAccount.accountId,
+          instagramAccount: instagramAccount.instagramAccount,
+          accountId: instagramAccount.accountId,
         };
       }
 
-      // Fetch the valid Twitter account information
-      const validAccount = await this.httpService.axiosRef.get(
-        `https://twitter-api-v1-1-enterprise.p.rapidapi.com/base/apitools/userByScreenNameV2?screenName=${username}&resFormat=json&apiKey=${process.env.TWITTER_API_KEY}`,
+      // Fetch the valid instagram account information
+      const validAccount = await this.httpService.axiosRef.post(
+        `https://instagram-scrapper-new.p.rapidapi.com/getUserInfoByUsername?username=${username}`,
+        {},
         {
           headers: {
             'Content-Type': 'application/json',
@@ -324,31 +330,29 @@ export class SocialBotService {
       );
 
       // If valid account data is returned
-      if (validAccount.data.msg === 'SUCCESS') {
+      if (validAccount.data.status === 'ok') {
         // Prepare to save new account data
-        const saveTwitterUsername = new this.TwitterAccountModel({
+        const saveInstagramUsername = new this.InstagramAccountModel({
           trackerChatId: [chatId],
-          twitterAccount: username,
-          accountId: validAccount.data.data.data.user.result.rest_id,
-          follwersCount:
-            validAccount.data.data.data.user.result.legacy.followers_count,
+          instagramAccount: username,
+          accountId: validAccount.data.data.id,
+          follwersCount: validAccount.data.data.follower_count,
         });
 
         // Use save method with error handling to prevent duplicates
-        await saveTwitterUsername.save();
+        await saveInstagramUsername.save();
 
         // Only fetch paginated data if save is successful
-        await this.fetchTwitterPaginatedData(username);
+        await this.fetchInstagramPaginatedData(validAccount.data.data.id);
         return {
           trackerChatId: [chatId],
-          twitterAccount: username,
-          accountId: validAccount.data.data.data.user.result.rest_id,
-          follwersCount:
-            validAccount.data.data.data.user.result.legacy.followers_count,
+          instagramAccount: username,
+          accountId: validAccount.data.data.id,
+          follwersCount: validAccount.data.data.follower_count,
         };
       }
     } catch (error) {
-      console.error('Error validating Twitter account:', error);
+      console.error('Error validating Instagram account:', error);
       return await this.socialBot.sendMessage(
         chatId,
         `There was an error processing your action, please try again.`,
@@ -356,12 +360,13 @@ export class SocialBotService {
     }
   };
 
-  fetchTwitterPaginatedData = async (username: string): Promise<void> => {
+  fetchInstagramPaginatedData = async (userId: string): Promise<void> => {
     try {
       // const params = cursor ? { cursor } : {};
 
-      const response = await this.httpService.axiosRef.get(
-        `https://twitter-api-v1-1-enterprise.p.rapidapi.com/base/apitools/followersList?cursor=-1&resFormat=json&apiKey=${process.env.TWITTER_API_KEY}&screenName=${username}`,
+      const response = await this.httpService.axiosRef.post(
+        `https://instagram-scrapper-new.p.rapidapi.com/getFollowers?id=${userId}`,
+        {},
         {
           headers: {
             'Content-Type': 'application/json',
@@ -374,12 +379,12 @@ export class SocialBotService {
       const { data } = response.data;
       const formattedUsers = data.users.map((user) => ({
         UsersuserId: user.id,
-        username: user.screen_name,
+        username: user.username,
       }));
 
       // Use findOneAndUpdate with error handling
-      await this.TwitterAccountModel.updateOne(
-        { twitterAccount: username },
+      await this.InstagramAccountModel.updateOne(
+        { accountId: userId },
         {
           $set: {
             newAccountFollowers: formattedUsers,
@@ -394,7 +399,7 @@ export class SocialBotService {
       // if (users.length > 0 && next_cursor > 0) {
       //   // delay in milliseconds before fetching data
 
-      //   await this.fetchTwitterPaginatedData(userId, next_cursor);
+      //   await this.fetchInstagramPaginatedData(userId, next_cursor);
       // } else {
       //   console.log('No more items to fetch.');
       // }
@@ -403,13 +408,14 @@ export class SocialBotService {
     }
   };
 
-  fetchNewFollowTwitterPaginatedData = async (
-    username: string,
+  fetchNewFollowInstagramPaginatedData = async (
+    userId: string,
   ): Promise<void> => {
     try {
       // const params = cursor ? { cursor } : {};
-      const response = await this.httpService.axiosRef.get(
-        `https://twitter-api-v1-1-enterprise.p.rapidapi.com/base/apitools/followersList?cursor=-1&resFormat=json&apiKey=${process.env.TWITTER_API_KEY}&screenName=${username}`,
+      const response = await this.httpService.axiosRef.post(
+        `https://instagram-scrapper-new.p.rapidapi.com/getFollowers?id=${userId}`,
+        {},
         {
           headers: {
             'Content-Type': 'application/json',
@@ -422,12 +428,12 @@ export class SocialBotService {
       const { data } = response.data;
       const formattedUsers = data.users.map((user) => ({
         UsersuserId: user.id,
-        username: user.screen_name,
+        username: user.username,
       }));
 
       // Use findOneAndUpdate with error handling
-      await this.TwitterAccountModel.updateOne(
-        { twitterAccount: username },
+      await this.InstagramAccountModel.updateOne(
+        { accountId: userId },
         {
           $set: {
             newAccountFollowers: formattedUsers,
@@ -435,15 +441,15 @@ export class SocialBotService {
         },
         //   { new: true, useFindAndModify: false },
       );
-      const lastupdatedData = await this.TwitterAccountModel.findOne({
-        twitterAccount: username,
+      const lastupdatedData = await this.InstagramAccountModel.findOne({
+        accountId: userId,
       });
       if (lastupdatedData) {
-        await this.notifyTwitter(
+        await this.notifyInstagram(
           lastupdatedData.oldAccountFollowers,
           lastupdatedData.newAccountFollowers,
           lastupdatedData.trackerChatId,
-          lastupdatedData.twitterAccount,
+          lastupdatedData.instagramAccount,
           lastupdatedData.alertedFollowers,
         );
       }
@@ -454,17 +460,19 @@ export class SocialBotService {
     }
   };
 
-  queryNewTwitterFollowers = async (): Promise<void> => {
+  queryNewInstagramFollowers = async (): Promise<void> => {
     try {
-      const allAccounts = await this.TwitterAccountModel.find();
+      const allAccounts = await this.InstagramAccountModel.find();
       console.log(allAccounts);
 
       if (allAccounts.length > 0) {
         await Promise.all(
           allAccounts.map(async (account) => {
             // Fetch the valid Twitter account information
-            const validAccount = await this.httpService.axiosRef.get(
-              `https://twitter-api-v1-1-enterprise.p.rapidapi.com/base/apitools/userByScreenNameV2?screenName=${account.twitterAccount}&resFormat=json&apiKey=${process.env.TWITTER_API_KEY}`,
+            // Fetch the valid instagram account information
+            const validAccount = await this.httpService.axiosRef.post(
+              `https://instagram-scrapper-new.p.rapidapi.com/getUserInfoByUsername?username=${account.instagramAccount}`,
+              {},
               {
                 headers: {
                   'Content-Type': 'application/json',
@@ -473,17 +481,16 @@ export class SocialBotService {
                 },
               },
             );
-            if (validAccount.data.msg === 'SUCCESS') {
-              await this.TwitterAccountModel.updateOne(
-                { twitterAccount: account.twitterAccount },
+
+            if (validAccount.data.status === 'ok') {
+              await this.InstagramAccountModel.updateOne(
+                { instagramAccount: account.instagramAccount },
                 {
-                  follwersCount:
-                    validAccount.data.data.data.user.result.legacy
-                      .followers_count,
+                  follwersCount: validAccount.data.data.follower_count,
                 },
               );
-              await this.fetchNewFollowTwitterPaginatedData(
-                account.twitterAccount,
+              await this.fetchNewFollowInstagramPaginatedData(
+                account.accountId,
               );
               return;
             }
@@ -497,11 +504,11 @@ export class SocialBotService {
 
       // After updating, send notifications for new followers
     } catch (error) {
-      console.error('Error querying new Twitter followers:', error);
+      console.error('Error querying new Instagram followers:', error);
     }
   };
 
-  notifyTwitter = async (
+  notifyInstagram = async (
     oldArray,
     newArray,
     chatIds,
@@ -529,7 +536,7 @@ export class SocialBotService {
               chatIds.forEach(async (chatId) => {
                 await this.socialBot.sendMessage(
                   chatId,
-                  `Follow alert  🚨:\n\n<a href="https://x.com/${newFollow.username}">@${newFollow.username}</a> followed @${account} twitter account`,
+                  `Follow alert  🚨:\n\n<a href="https://www.instagram.com/${newFollow.username}">@${newFollow.username}</a> followed @${account} twitter account`,
                   { parse_mode: 'HTML' },
                 );
               });
@@ -538,8 +545,8 @@ export class SocialBotService {
             }
           }),
         );
-        await this.TwitterAccountModel.updateOne(
-          { twitterAccount: account },
+        await this.InstagramAccountModel.updateOne(
+          { instagramAccount: account },
           {
             $set: { oldAccountFollowers: newArray }, // Set the new followers array
             $push: { alertedFollowers: { $each: nonAlertedFollwers } }, // Push each non-alerted follower
@@ -554,7 +561,7 @@ export class SocialBotService {
     }
   };
 
-  // notifyTwitterByNumber = async (
+  // notifyInstagramByNumber = async (
   //   oldFollowCount,
   //   newFollowCount,
   //   chatIds,
@@ -580,7 +587,7 @@ export class SocialBotService {
   // @Cron('*/30 * * * *')
   @Cron(`${process.env.CRON}`)
   async handleTwitterCron() {
-    const jobRunning = await this.TwitterJobModel.find();
+    const jobRunning = await this.InstagramJobModel.find();
     if (jobRunning[0].isJobRunning) {
       // If a job is already running, exit early to prevent data pollution
 
@@ -588,20 +595,20 @@ export class SocialBotService {
     }
 
     // Set the flag to indicate the job is running
-    await this.TwitterJobModel.updateOne(
+    await this.InstagramJobModel.updateOne(
       { _id: jobRunning[0]._id },
       { isJobRunning: true },
     );
 
     try {
       // Call your function to query new Twitter followers
-      await this.queryNewTwitterFollowers();
+      await this.queryNewInstagramFollowers();
     } catch (error) {
       // Handle any errors that may occur during execution
       console.error('Error in cron job:', error);
     } finally {
       // Reset the flag to indicate the job has completed
-      await this.TwitterJobModel.updateOne(
+      await this.InstagramJobModel.updateOne(
         { _id: jobRunning[0]._id },
         { isJobRunning: false },
       );
@@ -609,11 +616,11 @@ export class SocialBotService {
   }
 
   // utility functions:
-  async twitterRemoveTrackerChatIdOrDelete(username: string, chatId: number) {
+  async instagramRemoveTrackerChatIdOrDelete(username: string, chatId: number) {
     try {
       // Find the document by twitterAccount
-      const account = await this.TwitterAccountModel.findOne({
-        twitterAccount: username,
+      const account = await this.InstagramAccountModel.findOne({
+        instagramAccount: username,
       });
 
       if (account) {
@@ -623,24 +630,24 @@ export class SocialBotService {
         if (trackerChatId.includes(chatId)) {
           if (trackerChatId.length > 1) {
             // If there are multiple trackerChatIds, remove the specific chatId
-            return await this.TwitterAccountModel.findOneAndUpdate(
-              { twitterAccount: username },
+            return await this.InstagramAccountModel.findOneAndUpdate(
+              { instagramAccount: username },
               { $pull: { trackerChatId: chatId } },
             );
           } else {
             // If it's the only trackerChatId, delete the document
-            return await this.TwitterAccountModel.findOneAndDelete({
-              twitterAccount: username,
+            return await this.InstagramAccountModel.findOneAndDelete({
+              instagramAccount: username,
             });
           }
         } else {
           console.log('Tracker chat ID not found.');
         }
       } else {
-        console.log('Twitter account not found.');
+        console.log('instagram account not found.');
       }
     } catch (error) {
-      console.error('Error in TwitterremoveTrackerChatIdOrDelete:', error);
+      console.error('Error in instagramRemoveTrackerChatIdOrDelete:', error);
     }
   }
 }

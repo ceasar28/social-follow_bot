@@ -1,20 +1,20 @@
 export const welcomeMessageMarkup = async (userName: string) => {
   return {
-    message: `Hi @${userName},Welcome to Twitter follower Tracker bot`,
+    message: `Hi @${userName},Welcome to Instagram follower Tracker bot`,
 
     keyboard: [
       [
         {
-          text: 'track X account 🐦',
+          text: 'track Instagram account 📸',
           callback_data: JSON.stringify({
-            command: '/trackX',
+            command: '/trackInsta',
             language: 'twitter',
           }),
         },
         {
-          text: 'view all tracked X account',
+          text: 'view all tracked Instagram account',
           callback_data: JSON.stringify({
-            command: '/viewX',
+            command: '/viewInsta',
             language: 'twitter',
           }),
         },

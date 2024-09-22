@@ -1,12 +1,13 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import * as mongoose from 'mongoose';
 
-export type TwitterAccountDocument = mongoose.HydratedDocument<TwitterAccount>;
+export type InstagramAccountDocument =
+  mongoose.HydratedDocument<InstagramAccount>;
 
 @Schema()
-export class TwitterAccount {
+export class InstagramAccount {
   @Prop()
-  twitterAccount: string;
+  instagramAccount: string;
   @Prop()
   accountId: string;
   @Prop()
@@ -21,5 +22,5 @@ export class TwitterAccount {
   alertedFollowers: any[];
 }
 
-export const TwitterAccountSchema =
-  SchemaFactory.createForClass(TwitterAccount);
+export const InstagramAccountSchema =
+  SchemaFactory.createForClass(InstagramAccount);
