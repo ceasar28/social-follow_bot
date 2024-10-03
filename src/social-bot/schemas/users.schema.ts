@@ -7,6 +7,7 @@ export type UserDocument = mongoose.HydratedDocument<User>;
 export class User {
   @Prop({ unique: true })
   userChatId: number;
+  @Prop()
   username: string;
 }
 

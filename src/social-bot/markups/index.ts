@@ -1,3 +1,5 @@
+import { viewTiktokAccount } from './viewTikAccounts';
+import { viewTwitterAccount } from './viewXaccounts';
 import { welcomeMessageMarkup } from './welcome';
 
-export { welcomeMessageMarkup };
+export { welcomeMessageMarkup, viewTiktokAccount, viewTwitterAccount };

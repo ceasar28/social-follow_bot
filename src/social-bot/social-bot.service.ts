@@ -6,13 +6,21 @@ import { Model } from 'mongoose';
 import { HttpService } from '@nestjs/axios';
 import { User } from './schemas/users.schema';
 import { TiktokAccount } from './schemas/tiktok.accounts.schema';
-import { welcomeMessageMarkup } from './markups';
+import {
+  viewTiktokAccount,
+  viewTwitterAccount,
+  welcomeMessageMarkup,
+} from './markups';
+import * as dotenv from 'dotenv';
+import { Session } from './schemas/session.schema';
+
+dotenv.config();
 
 const token = process.env.TEST_TOKEN;
 
 @Injectable()
 export class SocialBotService {
-  private readonly trackerBot: TelegramBot;
+  private readonly socialBot: TelegramBot;
   private logger = new Logger(SocialBotService.name);
 
   constructor(
@@ -21,11 +29,12 @@ export class SocialBotService {
     private readonly TwitterAccountModel: Model<TwitterAccount>,
     @InjectModel(TiktokAccount.name)
     private readonly TiktokAccountModel: Model<TiktokAccount>,
+    @InjectModel(Session.name) private readonly SessionModel: Model<Session>,
     @InjectModel(User.name) private readonly UserModel: Model<User>,
   ) {
-    this.trackerBot = new TelegramBot(token, { polling: true });
-    this.trackerBot.on('message', this.handleRecievedMessages);
-    this.trackerBot.on('callback_query', this.handleButtonCommands);
+    this.socialBot = new TelegramBot(token, { polling: true });
+    this.socialBot.on('message', this.handleRecievedMessages);
+    this.socialBot.on('callback_query', this.handleButtonCommands);
   }
 
   handleRecievedMessages = async (
@@ -33,20 +42,66 @@ export class SocialBotService {
   ): Promise<unknown> => {
     this.logger.debug(msg);
     try {
-      await this.trackerBot.sendChatAction(msg.chat.id, 'typing');
+      await this.socialBot.sendChatAction(msg.chat.id, 'typing');
       if (msg.text.trim() === '/start') {
+        const userExist = await this.UserModel.findOne({
+          userChatId: msg.chat.id,
+        });
+        if (!userExist) {
+          const savedUser = new this.UserModel({
+            userChatId: msg.chat.id,
+            username: msg.from.username,
+          });
+          savedUser.save();
+        }
         const username: string = `${msg.from.username}`;
         const welcome = await welcomeMessageMarkup(username);
         const replyMarkup = {
           inline_keyboard: welcome.keyboard,
         };
-        return await this.trackerBot.sendMessage(msg.chat.id, welcome.message, {
+        return await this.socialBot.sendMessage(msg.chat.id, welcome.message, {
           reply_markup: replyMarkup,
         });
+      } else if (/^@/.test(msg.text.trim())) {
+        const session = await this.SessionModel.findOne({
+          userChatId: msg.chat.id,
+        });
+        if (session && session.prompt && session.type === 'twitter') {
+          //TODO: VERIFY USERNAME BEFORE SAVING
+          const saveTwitterUsername = new this.TwitterAccountModel({
+            trackerChatId: msg.chat.id,
+            twitterAccount: msg.text.trim(),
+          });
+          saveTwitterUsername.save();
+          if (saveTwitterUsername) {
+            await this.socialBot.sendMessage(
+              msg.chat.id,
+              `${saveTwitterUsername.twitterAccount} twitter will be monitored`,
+            );
+            return;
+          }
+          return;
+        } else if (session && session.prompt && session.type === 'tiktok') {
+          //TODO: VERIFY USERNAME BEFORE SAVING
+          const saveTiktokUsername = new this.TiktokAccountModel({
+            trackerChatId: msg.chat.id,
+            tiktokAccount: msg.text.trim(),
+          });
+          saveTiktokUsername.save();
+          if (saveTiktokUsername) {
+            await this.socialBot.sendMessage(
+              msg.chat.id,
+              `${saveTiktokUsername.tiktokAccount} tiktok account will be monitored`,
+            );
+            return;
+          }
+          return;
+        }
+        return;
       }
     } catch (error) {
       console.log(error);
-      return await this.trackerBot.sendMessage(
+      return await this.socialBot.sendMessage(
         msg.chat.id,
         'There was an error processing your message',
       );
@@ -81,39 +136,195 @@ export class SocialBotService {
 
     try {
       console.log(command);
+      let session;
       switch (command) {
-        // case '/track':
-        //   await this.trackerBot.sendChatAction(chatId, 'typing');
-        //   return await this.sendTransactionDetails(chatId);
-
-        case '/track':
-          await this.trackerBot.sendChatAction(chatId, 'typing');
-          console.log('hey');
-          const userExist = await this.UserModel.findOne({
-            userChatId: chatId,
-          });
-          if (!userExist) {
-            const savedUser = new this.UserModel({ userChatId: chatId });
-            return savedUser.save();
+        case '/trackX':
+          try {
+            await this.socialBot.sendChatAction(chatId, 'typing');
+            console.log('hey');
+            session = await this.SessionModel.findOne({
+              userChatId: chatId,
+            });
+            if (!session) {
+              const startSession = new this.SessionModel({
+                userChatId: chatId,
+                type: 'twitter',
+              });
+              startSession.save();
+              return await this.twitterUsernameInput(chatId);
+            }
+            await this.SessionModel.findByIdAndUpdate(session._id, {
+              type: 'twitter',
+            });
+            return await this.twitterUsernameInput(chatId);
+          } catch (error) {
+            console.log(error);
+            return;
           }
-          return userExist;
-        // setInterval(() => {
-        //   this.queryBlockchain();
-        // }, 60000); // Run every 60 seconds
-        // return await this.queryBlockchain();
+
+        case '/trackTiktok':
+          try {
+            await this.socialBot.sendChatAction(chatId, 'typing');
+            console.log('hey');
+            session = await this.SessionModel.findOne({
+              userChatId: chatId,
+            });
+            if (!session) {
+              const startSession = new this.SessionModel({
+                userChatId: chatId,
+                type: 'tiktok',
+              });
+              startSession.save();
+              return await this.tiktokUsernameInput(chatId);
+            }
+            await this.SessionModel.findByIdAndUpdate(session._id, {
+              type: 'tiktok',
+            });
+            return await this.tiktokUsernameInput(chatId);
+          } catch (error) {
+            console.log(error);
+            return;
+          }
+
+        case '/viewX':
+          try {
+            await this.socialBot.sendChatAction(chatId, 'typing');
+            console.log('hey');
+            const twitterAccounts = await this.TwitterAccountModel.find({
+              trackerChatId: chatId,
+            });
+
+            const allTwitteraccounts = [...twitterAccounts];
+            const twitterMarkup = await viewTwitterAccount(allTwitteraccounts);
+            const twitterReplyMarkup = {
+              inline_keyboard: twitterMarkup.keyboard,
+            };
+
+            return await this.socialBot.sendMessage(
+              chatId,
+              twitterMarkup.message,
+              {
+                reply_markup: twitterReplyMarkup,
+              },
+            );
+          } catch (error) {
+            console.log(error);
+            return;
+          }
+
+        case '/viewTiktok':
+          try {
+            await this.socialBot.sendChatAction(chatId, 'typing');
+            console.log('hey');
+            const tiktokAccounts = await this.TiktokAccountModel.find({
+              trackerChatId: chatId,
+            });
+
+            const alltiktokAccounts = [...tiktokAccounts];
+            const tiktokMarkup = await viewTiktokAccount(alltiktokAccounts);
+            const tiktokMarkupReply = {
+              inline_keyboard: tiktokMarkup.keyboard,
+            };
+
+            return await this.socialBot.sendMessage(
+              chatId,
+              tiktokMarkup.message,
+              {
+                reply_markup: tiktokMarkupReply,
+              },
+            );
+          } catch (error) {
+            console.log(error);
+            return;
+          }
+
+        case '/close':
+          await this.socialBot.sendChatAction(query.message.chat.id, 'typing');
+          return await this.socialBot.deleteMessage(
+            query.message.chat.id,
+            query.message.message_id,
+          );
 
         default:
-          return await this.trackerBot.sendMessage(
+          return await this.socialBot.sendMessage(
             chatId,
             'There was an error processing your message',
           );
       }
     } catch (error) {
       console.log(error);
-      return await this.trackerBot.sendMessage(
+      return await this.socialBot.sendMessage(
         chatId,
         'There was an error processing your message',
       );
+    }
+  };
+
+  twitterUsernameInput = async (chatId: number) => {
+    try {
+      await this.socialBot.sendMessage(
+        chatId,
+        'twitter username to track (must start with @)',
+        {
+          reply_markup: {
+            force_reply: true,
+          },
+        },
+      );
+
+      await this.SessionModel.findOneAndUpdate(
+        {
+          userChatId: chatId,
+        },
+        { prompt: true },
+      );
+
+      //   const session = await this.SessionModel.findOne({
+      //     userChatId: chatId,
+      //   });
+      //   if (usernamePrompt) {
+      //     await this.SessionModel.findOneAndUpdate(
+      //       { userChatId: session._id },
+      //       { promptIds: [...session.promptIds, usernamePrompt.message_id] },
+      //     );
+      //     return;
+      //   }
+
+      return;
+    } catch (error) {
+      console.log(error);
+    }
+  };
+
+  tiktokUsernameInput = async (chatId: number) => {
+    try {
+      await this.socialBot.sendMessage(
+        chatId,
+        'tiktok username to track (must start with @)',
+        {
+          reply_markup: {
+            force_reply: true,
+          },
+        },
+      );
+
+      await this.SessionModel.findOneAndUpdate(
+        {
+          userChatId: chatId,
+        },
+        { prompt: true },
+      );
+      //   if (usernamePrompt) {
+      //     await this.SessionModel.findOneAndUpdate(
+      //       { userChatId: session._id },
+      //       { promptIds: [...session.promptIds, usernamePrompt.message_id] },
+      //     );
+      //     return;
+      //   }
+
+      return;
+    } catch (error) {
+      console.log(error);
     }
   };
 }

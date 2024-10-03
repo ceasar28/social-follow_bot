@@ -1,7 +1,7 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import * as mongoose from 'mongoose';
 
-export type UserDocument = mongoose.HydratedDocument<TwitterAccount>;
+export type TwitterAccountDocument = mongoose.HydratedDocument<TwitterAccount>;
 
 @Schema()
 export class TwitterAccount {

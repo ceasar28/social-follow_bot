@@ -13,6 +13,7 @@ import {
   TiktokAccount,
   TiktokAccountSchema,
 } from './schemas/tiktok.accounts.schema';
+import { Session, SessionSchema } from './schemas/session.schema';
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import {
     MongooseModule.forFeature([
       { name: TiktokAccount.name, schema: TiktokAccountSchema },
     ]),
+    MongooseModule.forFeature([{ name: Session.name, schema: SessionSchema }]),
     MongooseModule.forFeature([{ name: User.name, schema: UserSchema }]),
   ],
   providers: [SocialBotService],

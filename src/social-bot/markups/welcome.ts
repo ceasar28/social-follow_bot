@@ -8,14 +8,14 @@ export const welcomeMessageMarkup = async (userName: string) => {
           text: 'track X account 🐦',
           callback_data: JSON.stringify({
             command: '/trackX',
-            language: 'english',
+            language: 'twitter',
           }),
         },
         {
           text: 'view all tracked X account',
           callback_data: JSON.stringify({
             command: '/viewX',
-            language: 'english',
+            language: 'twitter',
           }),
         },
       ],
@@ -24,14 +24,14 @@ export const welcomeMessageMarkup = async (userName: string) => {
           text: 'track tiktok account 🎵',
           callback_data: JSON.stringify({
             command: '/trackTiktok',
-            language: 'english',
+            language: 'tiktok',
           }),
         },
         {
           text: 'view all tracked tiktok account',
           callback_data: JSON.stringify({
             command: '/viewTiktok',
-            language: 'english',
+            language: 'tiktok',
           }),
         },
       ],
