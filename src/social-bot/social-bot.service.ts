@@ -43,6 +43,9 @@ export class SocialBotService {
     this.logger.debug(msg);
     try {
       await this.socialBot.sendChatAction(msg.chat.id, 'typing');
+      const regex = /^\/del\s+(twitter|tiktok)\s+(@\w+)$/;
+
+      const match = msg.text.trim().match(regex);
       if (msg.text.trim() === '/start') {
         const userExist = await this.UserModel.findOne({
           userChatId: msg.chat.id,
@@ -98,6 +101,41 @@ export class SocialBotService {
           return;
         }
         return;
+      } else if (match) {
+        const platform = match[1]; // This is either 'twitter' or 'tiktok'
+        const username = match[2]; // This is the @username
+        if (platform == 'twitter') {
+          const deletedAccount =
+            await this.TwitterAccountModel.findOneAndDelete({
+              twitterAccount: username,
+            });
+          if (deletedAccount) {
+            return await this.socialBot.sendMessage(
+              msg.chat.id,
+              `${deletedAccount.twitterAccount} has been removed`,
+            );
+          }
+          return await this.socialBot.sendMessage(
+            msg.chat.id,
+            'There was an error processing your message',
+          );
+        } else if (platform == 'tiktok') {
+          const deletedAccount = await this.TiktokAccountModel.findOneAndDelete(
+            {
+              tiktokAccount: username,
+            },
+          );
+          if (deletedAccount) {
+            return await this.socialBot.sendMessage(
+              msg.chat.id,
+              `${deletedAccount.tiktokAccount} has been removed`,
+            );
+          }
+          return await this.socialBot.sendMessage(
+            msg.chat.id,
+            'There was an error processing your message',
+          );
+        }
       }
     } catch (error) {
       console.log(error);
