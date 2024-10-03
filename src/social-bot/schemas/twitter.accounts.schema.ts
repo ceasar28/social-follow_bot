@@ -16,7 +16,9 @@ export class TwitterAccount {
   @Prop()
   trackerChatId: string;
   @Prop()
-  accountFollowers: string[];
+  oldAccountFollowers: string[];
+  @Prop()
+  newAccountFollowers: string[];
 }
 
 export const TwitterAccountSchema =

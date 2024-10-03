@@ -13,6 +13,7 @@ import {
 } from './markups';
 import * as dotenv from 'dotenv';
 import { Session } from './schemas/session.schema';
+import { Cron } from '@nestjs/schedule';
 
 dotenv.config();
 
@@ -408,6 +409,7 @@ export class SocialBotService {
         saveTwitterUsername.save();
 
         if (saveTwitterUsername) {
+          await this.fetchTwitterPaginatedData(validAccount.data.rest_id);
           return {
             trackerChatId: chatId,
             twitterAccount: username,
@@ -427,32 +429,202 @@ export class SocialBotService {
     }
   };
 
-  //   queryTwitterAccounts = async () => {
-  //     try {
-  //       const monitoredAccounts = await this.TwitterAccountModel.find();
+  fetchTwitterPaginatedData = async (
+    userId: string,
+    cursor?: string,
+  ): Promise<void> => {
+    try {
+      // Define query parameters, adding curso if it exists
+      const params = cursor ? { cursor } : {};
 
-  //       const updates = await this.httpService.axiosRef.post(
-  //         process.env.GRAPHQL_URL,
-  //         body,
-  //         {
-  //           headers: {
-  //             'Content-Type': 'application/json',
-  //           },
-  //         },
-  //       );
-  //     } catch (error) {
-  //       console.log(error);
-  //     }
-  //   };
+      // Make the HTTP GET request using axios
+      const response = await this.httpService.axiosRef.get(
+        `https://twitter-api47.p.rapidapi.com/v2/user/followers?userId=${userId}`,
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'x-rapidapi-key': process.env.RAPID_API_KEY,
+            'x-rapidapi-host': process.env.RAPID_HOST,
+          },
+          params,
+        },
+      );
+
+      // Destructure the response to get the users and the next 'cursor'
+      const { users, cursor: nextCursor } = response.data;
+      const formattedUsers: any[] = [];
+      users.forEach((user) => {
+        formattedUsers.push({
+          UsersuserId: user.rest_id,
+          username: user.legacy.screen_name,
+        });
+      });
+
+      // save it to the db
+      await this.TwitterAccountModel.findOneAndUpdate(
+        { accountId: userId },
+        {
+          $push: {
+            newAccountFollowers: { $each: formattedUsers },
+            oldAccountFollowers: { $each: formattedUsers },
+          },
+        },
+        { new: true, useFindAndModify: false },
+      );
+      // Process the items (for example, log them)
+      console.log('Fetched items:', formattedUsers);
+
+      // If there are items and another 'curso', continue making requests
+      if (users.length > 0 && nextCursor) {
+        // Recursive call to fetch the next page of items
+        await this.fetchTwitterPaginatedData(userId, nextCursor);
+      } else {
+        console.log('No more items to fetch.');
+      }
+    } catch (error) {
+      console.error('Error fetching data:', error);
+    }
+  };
+
+  fetchNewFollowTwitterPaginatedData = async (
+    userId: string,
+    cursor?: string,
+    firstCall: boolean = true, // Add a parameter to check for the first call
+  ): Promise<void> => {
+    try {
+      // Define query parameters, adding cursor if it exists
+      const params = cursor ? { cursor } : {};
+
+      // Make the HTTP GET request using axios
+      const response = await this.httpService.axiosRef.get(
+        `https://twitter-api47.p.rapidapi.com/v2/user/followers?userId=${userId}`,
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'x-rapidapi-key': process.env.RAPID_API_KEY,
+            'x-rapidapi-host': process.env.RAPID_HOST,
+          },
+          params,
+        },
+      );
+
+      // Destructure the response to get the users and the next 'cursor'
+      const { users, cursor: nextCursor } = response.data;
+      const formattedUsers: any[] = users.map((user) => ({
+        UsersuserId: user.rest_id,
+        username: user.legacy.screen_name,
+      }));
+
+      // Clear the newAccountFollowers on the first call
+      if (firstCall) {
+        const olddata = await this.TwitterAccountModel.findOne({
+          accountId: userId,
+        });
+        // set the olddata to be the newOne
+        await this.TwitterAccountModel.updateOne(
+          { _id: olddata._id },
+          {
+            oldAccountFollowers: olddata.newAccountFollowers,
+          },
+        );
+        await this.TwitterAccountModel.findOneAndUpdate(
+          { accountId: userId },
+          {
+            $set: {
+              newAccountFollowers: formattedUsers, // Set new followers directly
+            },
+          },
+        );
+      } else {
+        // Append to newAccountFollowers on subsequent calls
+        await this.TwitterAccountModel.findOneAndUpdate(
+          { accountId: userId },
+          {
+            $push: {
+              newAccountFollowers: { $each: formattedUsers },
+            },
+          },
+        );
+      }
+
+      // Process the items (for example, log them)
+      console.log('Fetched items:', formattedUsers);
+
+      // If there are items and another 'cursor', continue making requests
+      if (users.length > 0 && nextCursor) {
+        // Recursive call to fetch the next page of items
+        await this.fetchNewFollowTwitterPaginatedData(
+          userId,
+          nextCursor,
+          false,
+        ); // Pass false for subsequent calls
+      } else {
+        console.log('No more items to fetch.');
+      }
+    } catch (error) {
+      console.error('Error fetching data:', error);
+    }
+  };
+
+  queryNewTwitterFollowers = async (): Promise<void> => {
+    try {
+      const allAccounts = await this.TwitterAccountModel.find();
+
+      // Fetch new followers in parallel for all accounts
+      await Promise.all(
+        allAccounts.map(async (account) => {
+          await this.fetchNewFollowTwitterPaginatedData(account.accountId);
+        }),
+      );
+
+      // After updating, send notifications for new followers
+      await Promise.all(
+        allAccounts.map(async (account) => {
+          await this.notifyTwitter(
+            account.oldAccountFollowers,
+            account.newAccountFollowers,
+            account.trackerChatId,
+            account.twitterAccount,
+          );
+        }),
+      );
+    } catch (error) {
+      console.error('Error fetching data:', error);
+    }
+  };
+
+  notifyTwitter = async (oldArray, newArray, chatId, account) => {
+    try {
+      // Use filter to find new follows
+      const addedFollows = newArray.filter((newItem) => {
+        // Check if the username is not included in the oldArray
+        return !oldArray.some(
+          (oldItem) => oldItem.username === newItem.username,
+        );
+      });
+
+      if (addedFollows.length > 0) {
+        // Send notifications in parallel for each new follower
+        await Promise.all(
+          addedFollows.map(async (newFollow) => {
+            await this.socialBot.sendMessage(
+              chatId,
+              `@${newFollow.username} followed @${account}`,
+            );
+          }),
+        );
+      } else {
+        console.log('No new elements added.');
+      }
+    } catch (error) {
+      console.error('Error sending notifications:', error);
+    }
+  };
+
+  //cronJob
+  @Cron('45 * * * * *')
+  async handleCron() {
+    await this.queryNewTwitterFollowers();
+    // this.logger.debug('Called when the current second is 45');
+  }
 }
-
-//    const getFollowers = await this.httpService.axiosRef.get(
-//      `https://twitter-api47.p.rapidapi.com/v2/user/by-username?username=spacex`,
-//      {
-//        headers: {
-//          'Content-Type': 'application/json',
-//          'x-rapidapi-key': process.env.RAPID_API_KEY,
-//          'x-rapidapi-host': process.env.RAPID_HOST,
-//        },
-//      },
-//    );
