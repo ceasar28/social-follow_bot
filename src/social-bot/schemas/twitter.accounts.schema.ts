@@ -8,11 +8,15 @@ export class TwitterAccount {
   @Prop()
   twitterAccount: string;
   @Prop()
+  accountId: string;
+  @Prop()
+  followers_count: bigint;
+  @Prop()
+  friends_count: bigint;
+  @Prop()
   trackerChatId: string;
   @Prop()
   accountFollowers: string[];
-  @Prop()
-  accountFollowing: string;
 }
 
 export const TwitterAccountSchema =

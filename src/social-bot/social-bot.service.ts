@@ -71,16 +71,24 @@ export class SocialBotService {
         });
         if (session && session.prompt && session.type === 'twitter') {
           //TODO: VERIFY USERNAME BEFORE SAVING
-          const saveTwitterUsername = new this.TwitterAccountModel({
-            trackerChatId: msg.chat.id,
-            twitterAccount: msg.text.trim(),
-          });
-          saveTwitterUsername.save();
-          if (saveTwitterUsername) {
-            await this.socialBot.sendMessage(
-              msg.chat.id,
-              `${saveTwitterUsername.twitterAccount} twitter will be monitored`,
-            );
+          const validAccount: any = await this.validateTwitterAccount(
+            msg.text.trim().startsWith('@')
+              ? msg.text.trim().slice(1)
+              : msg.text.trim(),
+            msg.chat.id,
+          );
+          if (validAccount.accountId) {
+            console.log(validAccount);
+            const account = await this.TwitterAccountModel.findOne({
+              twitterAccount: `${validAccount.twitterAccount}`,
+            });
+            if (account) {
+              console.log(account);
+              return await this.socialBot.sendMessage(
+                msg.chat.id,
+                `${msg.text.trim()} twitter will be monitored\n\nFollower: ${account.followers_count}\nfollows: ${account.friends_count}`,
+              );
+            }
             return;
           }
           return;
@@ -107,7 +115,7 @@ export class SocialBotService {
         if (platform == 'twitter') {
           const deletedAccount =
             await this.TwitterAccountModel.findOneAndDelete({
-              twitterAccount: username,
+              twitterAccount: username.slice(1),
             });
           if (deletedAccount) {
             return await this.socialBot.sendMessage(
@@ -122,7 +130,7 @@ export class SocialBotService {
         } else if (platform == 'tiktok') {
           const deletedAccount = await this.TiktokAccountModel.findOneAndDelete(
             {
-              tiktokAccount: username,
+              tiktokAccount: username.slice(1),
             },
           );
           if (deletedAccount) {
@@ -365,4 +373,86 @@ export class SocialBotService {
       console.log(error);
     }
   };
+
+  validateTwitterAccount = async (username: string, chatId: number) => {
+    try {
+      const twitterAccount = await this.TwitterAccountModel.findOne({
+        twitterAccount: username,
+        trackerChatId: chatId,
+      });
+      if (twitterAccount) {
+        return await this.socialBot.sendMessage(
+          chatId,
+          `you are already monitoring @${username} twitter account\n\nFollower: ${twitterAccount.followers_count}\nfollows: ${twitterAccount.friends_count}`,
+        );
+      }
+
+      const validAccount = await this.httpService.axiosRef.get(
+        `https://twitter-api47.p.rapidapi.com/v2/user/by-username?username=${username}`,
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'x-rapidapi-key': process.env.RAPID_API_KEY,
+            'x-rapidapi-host': process.env.RAPID_HOST,
+          },
+        },
+      );
+      if (validAccount.data) {
+        const saveTwitterUsername = new this.TwitterAccountModel({
+          trackerChatId: chatId,
+          twitterAccount: username,
+          accountId: validAccount.data.rest_id,
+          followers_count: validAccount.data.legacy.followers_count,
+          friends_count: validAccount.data.legacy.friends_count,
+        });
+        saveTwitterUsername.save();
+
+        if (saveTwitterUsername) {
+          return {
+            trackerChatId: chatId,
+            twitterAccount: username,
+            accountId: validAccount.data.rest_id,
+            followers_count: validAccount.data.legacy.followers_count,
+            friends_count: validAccount.data.legacy.friends_count,
+          };
+        }
+        return;
+      }
+    } catch (error) {
+      console.log(error);
+      return await this.socialBot.sendMessage(
+        chatId,
+        `There was an error processing your action, try again`,
+      );
+    }
+  };
+
+  //   queryTwitterAccounts = async () => {
+  //     try {
+  //       const monitoredAccounts = await this.TwitterAccountModel.find();
+
+  //       const updates = await this.httpService.axiosRef.post(
+  //         process.env.GRAPHQL_URL,
+  //         body,
+  //         {
+  //           headers: {
+  //             'Content-Type': 'application/json',
+  //           },
+  //         },
+  //       );
+  //     } catch (error) {
+  //       console.log(error);
+  //     }
+  //   };
 }
+
+//    const getFollowers = await this.httpService.axiosRef.get(
+//      `https://twitter-api47.p.rapidapi.com/v2/user/by-username?username=spacex`,
+//      {
+//        headers: {
+//          'Content-Type': 'application/json',
+//          'x-rapidapi-key': process.env.RAPID_API_KEY,
+//          'x-rapidapi-host': process.env.RAPID_HOST,
+//        },
+//      },
+//    );
