@@ -14,6 +14,7 @@ import {
 import * as dotenv from 'dotenv';
 import { Session } from './schemas/session.schema';
 import { Cron } from '@nestjs/schedule';
+import { Job } from './schemas/job.schema';
 
 dotenv.config();
 
@@ -32,11 +33,19 @@ export class SocialBotService {
     private readonly TiktokAccountModel: Model<TiktokAccount>,
     @InjectModel(Session.name) private readonly SessionModel: Model<Session>,
     @InjectModel(User.name) private readonly UserModel: Model<User>,
+    @InjectModel(Job.name) private readonly JobModel: Model<Job>,
   ) {
     this.socialBot = new TelegramBot(token, { polling: true });
     this.socialBot.on('message', this.handleRecievedMessages);
     this.socialBot.on('callback_query', this.handleButtonCommands);
+    this.JobModel.deleteMany({});
+    this.createJobData();
   }
+
+  createJobData = async () => {
+    await this.JobModel.deleteMany({});
+    await this.JobModel.create({ isJobRunning: false });
+  };
 
   handleRecievedMessages = async (
     msg: TelegramBot.Message,
@@ -79,7 +88,6 @@ export class SocialBotService {
             msg.chat.id,
           );
           if (validAccount.accountId) {
-            console.log(validAccount);
             const account = await this.TwitterAccountModel.findOne({
               twitterAccount: `${validAccount.twitterAccount}`,
             });
@@ -87,7 +95,7 @@ export class SocialBotService {
               console.log(account);
               return await this.socialBot.sendMessage(
                 msg.chat.id,
-                `${msg.text.trim()} twitter will be monitored\n\nFollower: ${account.followers_count}\nfollows: ${account.friends_count}`,
+                `${msg.text.trim()} twitter will be monitored.`,
               );
             }
             return;
@@ -117,6 +125,7 @@ export class SocialBotService {
           const deletedAccount =
             await this.TwitterAccountModel.findOneAndDelete({
               twitterAccount: username.slice(1),
+              trackerChatId: msg.chat.id,
             });
           if (deletedAccount) {
             return await this.socialBot.sendMessage(
@@ -319,7 +328,7 @@ export class SocialBotService {
         },
       );
 
-      await this.SessionModel.findOneAndUpdate(
+      await this.SessionModel.updateOne(
         {
           userChatId: chatId,
         },
@@ -377,17 +386,32 @@ export class SocialBotService {
 
   validateTwitterAccount = async (username: string, chatId: number) => {
     try {
+      // Check if the account is already monitored
       const twitterAccount = await this.TwitterAccountModel.findOne({
         twitterAccount: username,
-        trackerChatId: chatId,
       });
-      if (twitterAccount) {
+
+      if (twitterAccount && +twitterAccount.trackerChatId.includes(chatId)) {
         return await this.socialBot.sendMessage(
           chatId,
-          `you are already monitoring @${username} twitter account\n\nFollower: ${twitterAccount.followers_count}\nfollows: ${twitterAccount.friends_count}`,
+          `You are already monitoring @${username} Twitter account.`,
         );
+      } else if (twitterAccount) {
+        await this.TwitterAccountModel.updateOne(
+          {
+            twitterAccount: twitterAccount.twitterAccount,
+          },
+          { trackerChatId: [...twitterAccount.trackerChatId, chatId] },
+          //   { new: true, useFindAndModify: false },
+        );
+        return {
+          trackerChatId: chatId,
+          twitterAccount: twitterAccount.twitterAccount,
+          accountId: twitterAccount.accountId,
+        };
       }
 
+      // Fetch the valid Twitter account information
       const validAccount = await this.httpService.axiosRef.get(
         `https://twitter-api47.p.rapidapi.com/v2/user/by-username?username=${username}`,
         {
@@ -398,33 +422,33 @@ export class SocialBotService {
           },
         },
       );
+
+      // If valid account data is returned
       if (validAccount.data) {
+        // Prepare to save new account data
         const saveTwitterUsername = new this.TwitterAccountModel({
-          trackerChatId: chatId,
+          trackerChatId: [chatId],
           twitterAccount: username,
           accountId: validAccount.data.rest_id,
-          followers_count: validAccount.data.legacy.followers_count,
-          friends_count: validAccount.data.legacy.friends_count,
         });
-        saveTwitterUsername.save();
 
-        if (saveTwitterUsername) {
-          await this.fetchTwitterPaginatedData(validAccount.data.rest_id);
-          return {
-            trackerChatId: chatId,
-            twitterAccount: username,
-            accountId: validAccount.data.rest_id,
-            followers_count: validAccount.data.legacy.followers_count,
-            friends_count: validAccount.data.legacy.friends_count,
-          };
-        }
+        // Use save method with error handling to prevent duplicates
+        await saveTwitterUsername.save();
+
+        // Only fetch paginated data if save is successful
+        await this.fetchTwitterPaginatedData(validAccount.data.rest_id);
+        return {
+          trackerChatId: [chatId],
+          twitterAccount: username,
+          accountId: validAccount.data.rest_id,
+        };
         return;
       }
     } catch (error) {
-      console.log(error);
+      console.error('Error validating Twitter account:', error);
       return await this.socialBot.sendMessage(
         chatId,
-        `There was an error processing your action, try again`,
+        `There was an error processing your action, please try again.`,
       );
     }
   };
@@ -434,10 +458,8 @@ export class SocialBotService {
     cursor?: string,
   ): Promise<void> => {
     try {
-      // Define query parameters, adding curso if it exists
       const params = cursor ? { cursor } : {};
 
-      // Make the HTTP GET request using axios
       const response = await this.httpService.axiosRef.get(
         `https://twitter-api47.p.rapidapi.com/v2/user/followers?userId=${userId}`,
         {
@@ -450,18 +472,14 @@ export class SocialBotService {
         },
       );
 
-      // Destructure the response to get the users and the next 'cursor'
       const { users, cursor: nextCursor } = response.data;
-      const formattedUsers: any[] = [];
-      users.forEach((user) => {
-        formattedUsers.push({
-          UsersuserId: user.rest_id,
-          username: user.legacy.screen_name,
-        });
-      });
+      const formattedUsers = users.map((user) => ({
+        UsersuserId: user.rest_id,
+        username: user.legacy.screen_name,
+      }));
 
-      // save it to the db
-      await this.TwitterAccountModel.findOneAndUpdate(
+      // Use findOneAndUpdate with error handling
+      await this.TwitterAccountModel.updateOne(
         { accountId: userId },
         {
           $push: {
@@ -469,14 +487,12 @@ export class SocialBotService {
             oldAccountFollowers: { $each: formattedUsers },
           },
         },
-        { new: true, useFindAndModify: false },
+        // { new: true, useFindAndModify: false },
       );
-      // Process the items (for example, log them)
+
       console.log('Fetched items:', formattedUsers);
 
-      // If there are items and another 'curso', continue making requests
       if (users.length > 0 && nextCursor) {
-        // Recursive call to fetch the next page of items
         await this.fetchTwitterPaginatedData(userId, nextCursor);
       } else {
         console.log('No more items to fetch.');
@@ -488,14 +504,13 @@ export class SocialBotService {
 
   fetchNewFollowTwitterPaginatedData = async (
     userId: string,
+    id: any,
     cursor?: string,
-    firstCall: boolean = true, // Add a parameter to check for the first call
+    firstCall: boolean = true,
   ): Promise<void> => {
     try {
-      // Define query parameters, adding cursor if it exists
       const params = cursor ? { cursor } : {};
 
-      // Make the HTTP GET request using axios
       const response = await this.httpService.axiosRef.get(
         `https://twitter-api47.p.rapidapi.com/v2/user/followers?userId=${userId}`,
         {
@@ -508,14 +523,13 @@ export class SocialBotService {
         },
       );
 
-      // Destructure the response to get the users and the next 'cursor'
       const { users, cursor: nextCursor } = response.data;
-      const formattedUsers: any[] = users.map((user) => ({
+      const formattedUsers = users.map((user) => ({
         UsersuserId: user.rest_id,
         username: user.legacy.screen_name,
       }));
 
-      // Clear the newAccountFollowers on the first call
+      // Clear newAccountFollowers on the first call
       if (firstCall) {
         const olddata = await this.TwitterAccountModel.findOne({
           accountId: userId,
@@ -526,40 +540,51 @@ export class SocialBotService {
           {
             oldAccountFollowers: olddata.newAccountFollowers,
           },
+          //   { new: true, useFindAndModify: false },
         );
-        await this.TwitterAccountModel.findOneAndUpdate(
+        await this.TwitterAccountModel.updateOne(
           { accountId: userId },
           {
-            $set: {
-              newAccountFollowers: formattedUsers, // Set new followers directly
-            },
+            newAccountFollowers: formattedUsers,
           },
+          //   { new: true, useFindAndModify: false },
         );
       } else {
-        // Append to newAccountFollowers on subsequent calls
-        await this.TwitterAccountModel.findOneAndUpdate(
+        await this.TwitterAccountModel.updateOne(
           { accountId: userId },
           {
             $push: {
               newAccountFollowers: { $each: formattedUsers },
             },
           },
+          //   { new: true, useFindAndModify: false },
         );
       }
 
-      // Process the items (for example, log them)
       console.log('Fetched items:', formattedUsers);
 
-      // If there are items and another 'cursor', continue making requests
       if (users.length > 0 && nextCursor) {
-        // Recursive call to fetch the next page of items
         await this.fetchNewFollowTwitterPaginatedData(
           userId,
+          id,
           nextCursor,
           false,
-        ); // Pass false for subsequent calls
+        );
       } else {
         console.log('No more items to fetch.');
+        const lastupdatedData = await this.TwitterAccountModel.findOne({
+          accountId: userId,
+        });
+        if (lastupdatedData) {
+          await this.notifyTwitter(
+            lastupdatedData.oldAccountFollowers,
+            lastupdatedData.newAccountFollowers,
+            lastupdatedData.trackerChatId,
+            lastupdatedData.twitterAccount,
+          );
+        }
+
+        return;
       }
     } catch (error) {
       console.error('Error fetching data:', error);
@@ -569,50 +594,49 @@ export class SocialBotService {
   queryNewTwitterFollowers = async (): Promise<void> => {
     try {
       const allAccounts = await this.TwitterAccountModel.find();
+      console.log(allAccounts);
 
       // Fetch new followers in parallel for all accounts
       await Promise.all(
         allAccounts.map(async (account) => {
-          await this.fetchNewFollowTwitterPaginatedData(account.accountId);
+          await this.fetchNewFollowTwitterPaginatedData(
+            account.accountId,
+            account._id,
+          );
         }),
       );
 
       // After updating, send notifications for new followers
-      await Promise.all(
-        allAccounts.map(async (account) => {
-          await this.notifyTwitter(
-            account.oldAccountFollowers,
-            account.newAccountFollowers,
-            account.trackerChatId,
-            account.twitterAccount,
-          );
-        }),
-      );
     } catch (error) {
-      console.error('Error fetching data:', error);
+      console.error('Error querying new Twitter followers:', error);
     }
   };
 
-  notifyTwitter = async (oldArray, newArray, chatId, account) => {
+  notifyTwitter = async (oldArray, newArray, chatIds, account) => {
     try {
       // Use filter to find new follows
       const addedFollows = newArray.filter((newItem) => {
-        // Check if the username is not included in the oldArray
         return !oldArray.some(
           (oldItem) => oldItem.username === newItem.username,
         );
       });
 
       if (addedFollows.length > 0) {
-        // Send notifications in parallel for each new follower
         await Promise.all(
           addedFollows.map(async (newFollow) => {
-            await this.socialBot.sendMessage(
-              chatId,
-              `@${newFollow.username} followed @${account}`,
-            );
+            try {
+              chatIds.forEach(async (chatId) => {
+                await this.socialBot.sendMessage(
+                  chatId,
+                  `@${newFollow.username} followed @${account}`,
+                );
+              });
+            } catch (error) {
+              console.log(error);
+            }
           }),
         );
+        return;
       } else {
         console.log('No new elements added.');
       }
@@ -622,9 +646,34 @@ export class SocialBotService {
   };
 
   //cronJob
-  @Cron('45 * * * * *')
+
+  @Cron('*/20 * * * * *')
   async handleCron() {
-    await this.queryNewTwitterFollowers();
-    // this.logger.debug('Called when the current second is 45');
+    const jobRunning = await this.JobModel.find();
+    if (jobRunning[0].isJobRunning) {
+      // If a job is already running, exit early to prevent data pollution
+      console.log('Job is running');
+      return;
+    }
+
+    // Set the flag to indicate the job is running
+    await this.JobModel.updateOne(
+      { _id: jobRunning[0]._id },
+      { isJobRunning: true },
+    );
+
+    try {
+      // Call your function to query new Twitter followers
+      await this.queryNewTwitterFollowers();
+    } catch (error) {
+      // Handle any errors that may occur during execution
+      console.error('Error in cron job:', error);
+    } finally {
+      // Reset the flag to indicate the job has completed
+      await this.JobModel.updateOne(
+        { _id: jobRunning[0]._id },
+        { isJobRunning: false },
+      );
+    }
   }
 }
