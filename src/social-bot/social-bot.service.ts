@@ -673,7 +673,7 @@ export class SocialBotService {
         {
           headers: {
             'Content-Type': 'application/json',
-            'x-rapidapi-key': process.env.RAPID_API_KEY,
+            'x-rapidapi-key': process.env.RAPID_API_KEY2,
             'x-rapidapi-host': process.env.RAPID_HOST_TIKTOK,
           },
         },
@@ -721,7 +721,7 @@ export class SocialBotService {
         {
           headers: {
             'Content-Type': 'application/json',
-            'x-rapidapi-key': process.env.RAPID_API_KEY,
+            'x-rapidapi-key': process.env.RAPID_API_KEY2,
             'x-rapidapi-host': process.env.RAPID_HOST_TIKTOK,
           },
           params,
@@ -771,7 +771,7 @@ export class SocialBotService {
         {
           headers: {
             'Content-Type': 'application/json',
-            'x-rapidapi-key': process.env.RAPID_API_KEY,
+            'x-rapidapi-key': process.env.RAPID_API_KEY2,
             'x-rapidapi-host': process.env.RAPID_HOST_TIKTOK,
           },
           params,
@@ -893,7 +893,7 @@ export class SocialBotService {
   };
 
   // //cronJob
-  @Cron('*/1 * * * *')
+  // @Cron('*/1 * * * *')
   async handleTwitterCron() {
     const jobRunning = await this.TwitterJobModel.find();
     if (jobRunning[0].isJobRunning) {
@@ -923,7 +923,7 @@ export class SocialBotService {
     }
   }
 
-  @Cron('*/1 * * * *')
+  // @Cron('*/1 * * * *')
   async handleTiktokCron() {
     const jobRunning = await this.TiktokJobModel.find();
     if (jobRunning[0].isJobRunning) {
