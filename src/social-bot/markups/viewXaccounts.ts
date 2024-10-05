@@ -4,7 +4,7 @@ export const viewTwitterAccount = async (accounts: any[]) => {
     message:
       allAccounts.length === 0
         ? `you don't have any twitter account to monitor.\nadd a username to monitor`
-        : `Twitter Accounts:\n${allAccounts.map((account) => `${account['twitterAccount']}`).join('\n')}\n\n to remove an account type use the format:\n /del twitter @username`,
+        : `Twitter Accounts:\n${allAccounts.map((account) => `@${account['twitterAccount']}`).join('\n')}\n\n to remove an account type use the format:\n /del twitter @username`,
 
     keyboard: [
       [

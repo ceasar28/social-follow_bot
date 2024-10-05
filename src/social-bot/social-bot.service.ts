@@ -180,6 +180,15 @@ export class SocialBotService {
           );
         }
       } else if (msg.text.trim() === '/menu') {
+        const userExist = await this.UserModel.findOne({
+          userChatId: msg.chat.id,
+        });
+        if (!userExist) {
+          return await this.socialBot.sendMessage(
+            msg.chat.id,
+            'Start the app first, /start or click the start button',
+          );
+        }
         return await this.defaultMenu(msg.chat.id);
       }
     } catch (error) {
@@ -256,7 +265,7 @@ export class SocialBotService {
             await this.socialBot.sendChatAction(chatId, 'typing');
             console.log('hey');
             const twitterAccounts = await this.TwitterAccountModel.find({
-              trackerChatId: chatId,
+              trackerChatId: { $in: [chatId] },
             });
 
             const allTwitteraccounts = [...twitterAccounts];
@@ -282,7 +291,7 @@ export class SocialBotService {
             await this.socialBot.sendChatAction(chatId, 'typing');
             console.log('hey');
             const tiktokAccounts = await this.TiktokAccountModel.find({
-              trackerChatId: chatId,
+              trackerChatId: { $in: [chatId] },
             });
 
             const alltiktokAccounts = [...tiktokAccounts];
