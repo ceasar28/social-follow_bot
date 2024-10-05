@@ -893,7 +893,7 @@ export class SocialBotService {
   };
 
   // //cronJob
-  // @Cron('*/1 * * * *')
+  @Cron('*/30 * * * *')
   async handleTwitterCron() {
     const jobRunning = await this.TwitterJobModel.find();
     if (jobRunning[0].isJobRunning) {
@@ -924,6 +924,7 @@ export class SocialBotService {
   }
 
   // @Cron('*/1 * * * *')
+  @Cron('0 */3 * * *')
   async handleTiktokCron() {
     const jobRunning = await this.TiktokJobModel.find();
     if (jobRunning[0].isJobRunning) {
