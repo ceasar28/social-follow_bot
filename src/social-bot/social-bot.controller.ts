@@ -8,12 +8,12 @@ export class SocialBotController {
   @HttpCode(HttpStatus.OK)
   @Get('twitter')
   querytwitter() {
-    // return this.botService.queryTwitter();
+    return this.botService.handleTwitterCron();
   }
 
   @HttpCode(HttpStatus.OK)
   @Get('tiktok')
-  allToken() {
-    // return this.botService.queryTiktok();
+  queryTiktok() {
+    return this.botService.handleTiktokCron;
   }
 }
