@@ -14,7 +14,12 @@ import {
   TiktokAccountSchema,
 } from './schemas/tiktok.accounts.schema';
 import { Session, SessionSchema } from './schemas/session.schema';
-import { Job, JobSchema } from './schemas/job.schema';
+import {
+  TiktokJob,
+  TiktokJobSchema,
+  TwitterJob,
+  TwitterJobSchema,
+} from './schemas/job.schema';
 
 @Module({
   imports: [
@@ -28,7 +33,12 @@ import { Job, JobSchema } from './schemas/job.schema';
     ]),
     MongooseModule.forFeature([{ name: Session.name, schema: SessionSchema }]),
     MongooseModule.forFeature([{ name: User.name, schema: UserSchema }]),
-    MongooseModule.forFeature([{ name: Job.name, schema: JobSchema }]),
+    MongooseModule.forFeature([
+      { name: TwitterJob.name, schema: TwitterJobSchema },
+    ]),
+    MongooseModule.forFeature([
+      { name: TiktokJob.name, schema: TiktokJobSchema },
+    ]),
   ],
   providers: [SocialBotService],
   controllers: [SocialBotController],

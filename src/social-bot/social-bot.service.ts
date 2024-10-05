@@ -7,6 +7,7 @@ import { HttpService } from '@nestjs/axios';
 import { User } from './schemas/users.schema';
 import { TiktokAccount } from './schemas/tiktok.accounts.schema';
 import {
+  menuMarkup,
   viewTiktokAccount,
   viewTwitterAccount,
   welcomeMessageMarkup,
@@ -14,7 +15,7 @@ import {
 import * as dotenv from 'dotenv';
 import { Session } from './schemas/session.schema';
 import { Cron } from '@nestjs/schedule';
-import { Job } from './schemas/job.schema';
+import { TiktokJob, TwitterJob } from './schemas/job.schema';
 
 dotenv.config();
 
@@ -33,18 +34,28 @@ export class SocialBotService {
     private readonly TiktokAccountModel: Model<TiktokAccount>,
     @InjectModel(Session.name) private readonly SessionModel: Model<Session>,
     @InjectModel(User.name) private readonly UserModel: Model<User>,
-    @InjectModel(Job.name) private readonly JobModel: Model<Job>,
+    @InjectModel(TwitterJob.name)
+    private readonly TwitterJobModel: Model<TwitterJob>,
+    @InjectModel(TiktokJob.name)
+    private readonly TiktokJobModel: Model<TiktokJob>,
   ) {
     this.socialBot = new TelegramBot(token, { polling: true });
     this.socialBot.on('message', this.handleRecievedMessages);
     this.socialBot.on('callback_query', this.handleButtonCommands);
-    this.JobModel.deleteMany({});
-    this.createJobData();
+    this.TwitterJobModel.deleteMany({});
+    this.createTwitterJobData();
+    this.TiktokJobModel.deleteMany({});
+    this.createTiktokJobData();
   }
 
-  createJobData = async () => {
-    await this.JobModel.deleteMany({});
-    await this.JobModel.create({ isJobRunning: false });
+  createTwitterJobData = async () => {
+    await this.TwitterJobModel.deleteMany({});
+    await this.TwitterJobModel.create({ isJobRunning: false });
+  };
+
+  createTiktokJobData = async () => {
+    await this.TiktokJobModel.deleteMany({});
+    await this.TiktokJobModel.create({ isJobRunning: false });
   };
 
   handleRecievedMessages = async (
@@ -53,9 +64,24 @@ export class SocialBotService {
     this.logger.debug(msg);
     try {
       await this.socialBot.sendChatAction(msg.chat.id, 'typing');
-      const regex = /^\/del\s+(twitter|tiktok)\s+(@\w+)$/;
+      function extractPlatformAndUsername(text) {
+        const regex = /\/(twitter|tiktok) @(\w+)/;
+        const match = text.match(regex);
 
-      const match = msg.text.trim().match(regex);
+        if (match) {
+          return {
+            platform: match[1], // "twitter" or "tiktok"
+            username: match[2], // The username after "@"
+          };
+        } else {
+          return null; // Return null if no match is found
+        }
+      }
+
+      const addMatch = extractPlatformAndUsername(msg.text.trim());
+      const delRegex = /^\/del\s+(twitter|tiktok)\s+(@\w+)$/;
+      const delMatch = msg.text.trim().match(delRegex);
+
       if (msg.text.trim() === '/start') {
         const userExist = await this.UserModel.findOne({
           userChatId: msg.chat.id,
@@ -75,16 +101,11 @@ export class SocialBotService {
         return await this.socialBot.sendMessage(msg.chat.id, welcome.message, {
           reply_markup: replyMarkup,
         });
-      } else if (/^@/.test(msg.text.trim())) {
-        const session = await this.SessionModel.findOne({
-          userChatId: msg.chat.id,
-        });
-        if (session && session.prompt && session.type === 'twitter') {
+      } else if (addMatch) {
+        if (addMatch.platform === 'twitter') {
           //TODO: VERIFY USERNAME BEFORE SAVING
           const validAccount: any = await this.validateTwitterAccount(
-            msg.text.trim().startsWith('@')
-              ? msg.text.trim().slice(1)
-              : msg.text.trim(),
+            addMatch.username,
             msg.chat.id,
           );
           if (validAccount.accountId) {
@@ -95,38 +116,43 @@ export class SocialBotService {
               console.log(account);
               return await this.socialBot.sendMessage(
                 msg.chat.id,
-                `${msg.text.trim()} twitter will be monitored.`,
+                `@${addMatch.username}twitter will be monitored.`,
               );
             }
             return;
           }
           return;
-        } else if (session && session.prompt && session.type === 'tiktok') {
+        } else if (addMatch.platform === 'tiktok') {
           //TODO: VERIFY USERNAME BEFORE SAVING
-          const saveTiktokUsername = new this.TiktokAccountModel({
-            trackerChatId: msg.chat.id,
-            tiktokAccount: msg.text.trim(),
-          });
-          saveTiktokUsername.save();
-          if (saveTiktokUsername) {
-            await this.socialBot.sendMessage(
-              msg.chat.id,
-              `${saveTiktokUsername.tiktokAccount} tiktok account will be monitored`,
-            );
+          const validAccount: any = await this.validateTiktokAccount(
+            addMatch.username,
+            msg.chat.id,
+          );
+          if (validAccount.accountId) {
+            const account = await this.TiktokAccountModel.findOne({
+              tiktokAccount: `${validAccount.tiktokAccount}`,
+            });
+            if (account) {
+              console.log(account);
+              return await this.socialBot.sendMessage(
+                msg.chat.id,
+                `@${addMatch.username} tiktok will be monitored.`,
+              );
+            }
             return;
           }
           return;
         }
         return;
-      } else if (match) {
-        const platform = match[1]; // This is either 'twitter' or 'tiktok'
-        const username = match[2]; // This is the @username
+      } else if (delMatch) {
+        const platform = delMatch[1]; // This is either 'twitter' or 'tiktok'
+        const username = delMatch[2]; // This is the @username
         if (platform == 'twitter') {
-          const deletedAccount =
-            await this.TwitterAccountModel.findOneAndDelete({
-              twitterAccount: username.slice(1),
-              trackerChatId: msg.chat.id,
-            });
+          const deletedAccount = await this.twitterRemoveTrackerChatIdOrDelete(
+            username.slice(1),
+            msg.chat.id,
+          );
+
           if (deletedAccount) {
             return await this.socialBot.sendMessage(
               msg.chat.id,
@@ -138,10 +164,9 @@ export class SocialBotService {
             'There was an error processing your message',
           );
         } else if (platform == 'tiktok') {
-          const deletedAccount = await this.TiktokAccountModel.findOneAndDelete(
-            {
-              tiktokAccount: username.slice(1),
-            },
+          const deletedAccount = await this.tiktokRemoveTrackerChatIdOrDelete(
+            username.slice(1),
+            msg.chat.id,
           );
           if (deletedAccount) {
             return await this.socialBot.sendMessage(
@@ -154,6 +179,8 @@ export class SocialBotService {
             'There was an error processing your message',
           );
         }
+      } else if (msg.text.trim() === '/menu') {
+        return await this.defaultMenu(msg.chat.id);
       }
     } catch (error) {
       console.log(error);
@@ -192,26 +219,22 @@ export class SocialBotService {
 
     try {
       console.log(command);
-      let session;
+
       switch (command) {
+        case '/menu':
+          try {
+            await this.socialBot.sendChatAction(chatId, 'typing');
+            return await this.defaultMenu(chatId);
+          } catch (error) {
+            console.log(error);
+            return;
+          }
+
         case '/trackX':
           try {
             await this.socialBot.sendChatAction(chatId, 'typing');
             console.log('hey');
-            session = await this.SessionModel.findOne({
-              userChatId: chatId,
-            });
-            if (!session) {
-              const startSession = new this.SessionModel({
-                userChatId: chatId,
-                type: 'twitter',
-              });
-              startSession.save();
-              return await this.twitterUsernameInput(chatId);
-            }
-            await this.SessionModel.findByIdAndUpdate(session._id, {
-              type: 'twitter',
-            });
+
             return await this.twitterUsernameInput(chatId);
           } catch (error) {
             console.log(error);
@@ -222,20 +245,6 @@ export class SocialBotService {
           try {
             await this.socialBot.sendChatAction(chatId, 'typing');
             console.log('hey');
-            session = await this.SessionModel.findOne({
-              userChatId: chatId,
-            });
-            if (!session) {
-              const startSession = new this.SessionModel({
-                userChatId: chatId,
-                type: 'tiktok',
-              });
-              startSession.save();
-              return await this.tiktokUsernameInput(chatId);
-            }
-            await this.SessionModel.findByIdAndUpdate(session._id, {
-              type: 'tiktok',
-            });
             return await this.tiktokUsernameInput(chatId);
           } catch (error) {
             console.log(error);
@@ -318,33 +327,27 @@ export class SocialBotService {
 
   twitterUsernameInput = async (chatId: number) => {
     try {
-      await this.socialBot.sendMessage(
-        chatId,
-        'twitter username to track (must start with @)',
-        {
-          reply_markup: {
-            force_reply: true,
-          },
+      await this.socialBot.sendMessage(chatId, '/twitter @username', {
+        reply_markup: {
+          force_reply: true,
         },
-      );
+      });
 
-      await this.SessionModel.updateOne(
-        {
-          userChatId: chatId,
-        },
-        { prompt: true },
-      );
+      return;
+    } catch (error) {
+      console.log(error);
+    }
+  };
 
-      //   const session = await this.SessionModel.findOne({
-      //     userChatId: chatId,
-      //   });
-      //   if (usernamePrompt) {
-      //     await this.SessionModel.findOneAndUpdate(
-      //       { userChatId: session._id },
-      //       { promptIds: [...session.promptIds, usernamePrompt.message_id] },
-      //     );
-      //     return;
-      //   }
+  defaultMenu = async (chatId: number) => {
+    try {
+      const menu = await menuMarkup();
+      const replyMarkup = {
+        inline_keyboard: menu.keyboard,
+      };
+      return await this.socialBot.sendMessage(chatId, menu.message, {
+        reply_markup: replyMarkup,
+      });
 
       return;
     } catch (error) {
@@ -354,29 +357,11 @@ export class SocialBotService {
 
   tiktokUsernameInput = async (chatId: number) => {
     try {
-      await this.socialBot.sendMessage(
-        chatId,
-        'tiktok username to track (must start with @)',
-        {
-          reply_markup: {
-            force_reply: true,
-          },
+      await this.socialBot.sendMessage(chatId, '/tiktok @username', {
+        reply_markup: {
+          force_reply: true,
         },
-      );
-
-      await this.SessionModel.findOneAndUpdate(
-        {
-          userChatId: chatId,
-        },
-        { prompt: true },
-      );
-      //   if (usernamePrompt) {
-      //     await this.SessionModel.findOneAndUpdate(
-      //       { userChatId: session._id },
-      //       { promptIds: [...session.promptIds, usernamePrompt.message_id] },
-      //     );
-      //     return;
-      //   }
+      });
 
       return;
     } catch (error) {
@@ -628,7 +613,7 @@ export class SocialBotService {
               chatIds.forEach(async (chatId) => {
                 await this.socialBot.sendMessage(
                   chatId,
-                  `@${newFollow.username} followed @${account}`,
+                  `Follow alert  🚨:\n\n@${newFollow.username} followed @${account} twitter account`,
                 );
               });
             } catch (error) {
@@ -645,11 +630,263 @@ export class SocialBotService {
     }
   };
 
-  //cronJob
+  validateTiktokAccount = async (username: string, chatId: number) => {
+    try {
+      // Check if the account is already monitored
+      const tiktokAccount = await this.TiktokAccountModel.findOne({
+        tiktokAccount: username,
+      });
 
-  @Cron('*/20 * * * * *')
-  async handleCron() {
-    const jobRunning = await this.JobModel.find();
+      if (tiktokAccount && +tiktokAccount.trackerChatId.includes(chatId)) {
+        return await this.socialBot.sendMessage(
+          chatId,
+          `You are already monitoring @${username} Tiktok account.`,
+        );
+      } else if (tiktokAccount) {
+        await this.TiktokAccountModel.updateOne(
+          {
+            tiktokAccount: tiktokAccount.tiktokAccount,
+          },
+          { trackerChatId: [...tiktokAccount.trackerChatId, chatId] },
+          //   { new: true, useFindAndModify: false },
+        );
+        return {
+          trackerChatId: chatId,
+          tiktokAccount: tiktokAccount.tiktokAccount,
+          accountId: tiktokAccount.accountId,
+        };
+      }
+
+      // Fetch the valid Tiktok account information
+      const validAccount = await this.httpService.axiosRef.get(
+        `https://tiktok-scraper7.p.rapidapi.com/user/info?unique_id=${username}`,
+
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'x-rapidapi-key': process.env.RAPID_API_KEY,
+            'x-rapidapi-host': process.env.RAPID_HOST_TIKTOK,
+          },
+        },
+      );
+
+      // If valid account data is returned
+      if (validAccount.data.data.user) {
+        // Prepare to save new account data
+        const saveTiktokUsername = new this.TiktokAccountModel({
+          trackerChatId: [chatId],
+          tiktokAccount: username,
+          accountId: validAccount.data.data.user.id,
+        });
+
+        // Use save method with error handling to prevent duplicates
+        await saveTiktokUsername.save();
+
+        // Only fetch paginated data if save is successful
+        await this.fetchTiktokPaginatedData(validAccount.data.data.user.id);
+        return {
+          trackerChatId: [chatId],
+          tiktokAccount: username,
+          accountId: validAccount.data.data.user.id,
+        };
+        return;
+      }
+    } catch (error) {
+      console.error('Error validating Tiktok account:', error);
+      return await this.socialBot.sendMessage(
+        chatId,
+        `There was an error processing your action, please try again.`,
+      );
+    }
+  };
+
+  fetchTiktokPaginatedData = async (
+    userId: string,
+    time?: number,
+  ): Promise<void> => {
+    try {
+      const params = time ? { time, count: 200 } : { count: 200 };
+
+      const response = await this.httpService.axiosRef.get(
+        `https://tiktok-scraper7.p.rapidapi.com/user/followers?user_id=${userId}`,
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'x-rapidapi-key': process.env.RAPID_API_KEY,
+            'x-rapidapi-host': process.env.RAPID_HOST_TIKTOK,
+          },
+          params,
+        },
+      );
+
+      const { data } = response.data;
+      const formattedUsers = data.followers.map((user) => ({
+        UsersuserId: user.id,
+        username: user.unique_id,
+      }));
+
+      // Use findOneAndUpdate with error handling
+      await this.TiktokAccountModel.updateOne(
+        { accountId: userId },
+        {
+          $push: {
+            newAccountFollowers: { $each: formattedUsers },
+            oldAccountFollowers: { $each: formattedUsers },
+          },
+        },
+        // { new: true, useFindAndModify: false },
+      );
+
+      console.log('Fetched items:', formattedUsers);
+
+      if (data.followers > 0 && data.hasMore) {
+        await this.fetchTwitterPaginatedData(userId, data.time);
+      } else {
+        console.log('No more items to fetch.');
+      }
+    } catch (error) {
+      console.error('Error fetching data:', error);
+    }
+  };
+
+  fetchNewFollowTiktokPaginatedData = async (
+    userId: string,
+    time?: string,
+    firstCall: boolean = true,
+  ): Promise<void> => {
+    try {
+      const params = time ? { time, count: 200 } : { count: 200 };
+
+      const response = await this.httpService.axiosRef.get(
+        `https://tiktok-scraper7.p.rapidapi.com/user/followers?user_id=${userId}`,
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'x-rapidapi-key': process.env.RAPID_API_KEY,
+            'x-rapidapi-host': process.env.RAPID_HOST_TIKTOK,
+          },
+          params,
+        },
+      );
+
+      const { data } = response.data;
+      const formattedUsers = data.followers.map((user) => ({
+        UsersuserId: user.id,
+        username: user.unique_id,
+      }));
+
+      // Clear newAccountFollowers on the first call
+      if (firstCall) {
+        const olddata = await this.TiktokAccountModel.findOne({
+          accountId: userId,
+        });
+        // set the olddata to be the newOne
+        await this.TiktokAccountModel.updateOne(
+          { _id: olddata._id },
+          {
+            oldAccountFollowers: olddata.newAccountFollowers,
+          },
+          //   { new: true, useFindAndModify: false },
+        );
+        await this.TiktokAccountModel.updateOne(
+          { accountId: userId },
+          {
+            newAccountFollowers: formattedUsers,
+          },
+          //   { new: true, useFindAndModify: false },
+        );
+      } else {
+        await this.TiktokAccountModel.updateOne(
+          { accountId: userId },
+          {
+            $push: {
+              newAccountFollowers: { $each: formattedUsers },
+            },
+          },
+          //   { new: true, useFindAndModify: false },
+        );
+      }
+
+      console.log('Fetched items:', formattedUsers);
+
+      if (data.followers > 0 && data.hasMore) {
+        await this.fetchNewFollowTiktokPaginatedData(userId, data.time, false);
+      } else {
+        console.log('No more items to fetch.');
+        const lastupdatedData = await this.TiktokAccountModel.findOne({
+          accountId: userId,
+        });
+        if (lastupdatedData) {
+          await this.notifyTiktok(
+            lastupdatedData.oldAccountFollowers,
+            lastupdatedData.newAccountFollowers,
+            lastupdatedData.trackerChatId,
+            lastupdatedData.tiktokAccount,
+          );
+        }
+
+        return;
+      }
+    } catch (error) {
+      console.error('Error fetching data:', error);
+    }
+  };
+
+  notifyTiktok = async (oldArray, newArray, chatIds, account) => {
+    try {
+      // Use filter to find new follows
+      const addedFollows = newArray.filter((newItem) => {
+        return !oldArray.some(
+          (oldItem) => oldItem.username === newItem.username,
+        );
+      });
+
+      if (addedFollows.length > 0) {
+        await Promise.all(
+          addedFollows.map(async (newFollow) => {
+            try {
+              chatIds.forEach(async (chatId) => {
+                await this.socialBot.sendMessage(
+                  chatId,
+                  `Follow alert  🚨:\n\n@${newFollow.username} followed @${account} tiktok Account`,
+                );
+              });
+            } catch (error) {
+              console.log(error);
+            }
+          }),
+        );
+        return;
+      } else {
+        console.log('No new elements added.');
+      }
+    } catch (error) {
+      console.error('Error sending notifications:', error);
+    }
+  };
+
+  queryNewTiktokFollowers = async (): Promise<void> => {
+    try {
+      const allAccounts = await this.TiktokAccountModel.find();
+      console.log(allAccounts);
+
+      // Fetch new followers in parallel for all accounts
+      await Promise.all(
+        allAccounts.map(async (account) => {
+          await this.fetchNewFollowTiktokPaginatedData(account.accountId);
+        }),
+      );
+
+      // After updating, send notifications for new followers
+    } catch (error) {
+      console.error('Error querying new Tiktok followers:', error);
+    }
+  };
+
+  // //cronJob
+  @Cron('*/1 * * * *')
+  async handleTwitterCron() {
+    const jobRunning = await this.TwitterJobModel.find();
     if (jobRunning[0].isJobRunning) {
       // If a job is already running, exit early to prevent data pollution
       console.log('Job is running');
@@ -657,7 +894,7 @@ export class SocialBotService {
     }
 
     // Set the flag to indicate the job is running
-    await this.JobModel.updateOne(
+    await this.TwitterJobModel.updateOne(
       { _id: jobRunning[0]._id },
       { isJobRunning: true },
     );
@@ -670,10 +907,113 @@ export class SocialBotService {
       console.error('Error in cron job:', error);
     } finally {
       // Reset the flag to indicate the job has completed
-      await this.JobModel.updateOne(
+      await this.TwitterJobModel.updateOne(
         { _id: jobRunning[0]._id },
         { isJobRunning: false },
       );
+    }
+  }
+
+  @Cron('*/1 * * * *')
+  async handleTiktokCron() {
+    const jobRunning = await this.TiktokJobModel.find();
+    if (jobRunning[0].isJobRunning) {
+      // If a job is already running, exit early to prevent data pollution
+      console.log('Job is running');
+      return;
+    }
+
+    // Set the flag to indicate the job is running
+    await this.TiktokJobModel.updateOne(
+      { _id: jobRunning[0]._id },
+      { isJobRunningTiktok: true },
+    );
+
+    try {
+      // Call your function to query new Twitter followers
+      await this.queryNewTiktokFollowers();
+    } catch (error) {
+      // Handle any errors that may occur during execution
+      console.error('Error in cron job:', error);
+    } finally {
+      // Reset the flag to indicate the job has completed
+      await this.TiktokJobModel.updateOne(
+        { _id: jobRunning[0]._id },
+        { isJobRunning: false },
+      );
+    }
+  }
+
+  // utility functions:
+  async twitterRemoveTrackerChatIdOrDelete(username: string, chatId: number) {
+    try {
+      // Find the document by twitterAccount
+      const account = await this.TwitterAccountModel.findOne({
+        twitterAccount: username,
+      });
+
+      if (account) {
+        const { trackerChatId } = account;
+
+        // Check if trackerChatId exists in the array
+        if (trackerChatId.includes(chatId)) {
+          if (trackerChatId.length > 1) {
+            // If there are multiple trackerChatIds, remove the specific chatId
+            return await this.TwitterAccountModel.findOneAndUpdate(
+              { twitterAccount: username },
+              { $pull: { trackerChatId: chatId } },
+            );
+          } else {
+            // If it's the only trackerChatId, delete the document
+            return await this.TwitterAccountModel.findOneAndDelete({
+              twitterAccount: username,
+            });
+          }
+          console.log('Tracker chat ID removed or account deleted.');
+        } else {
+          console.log('Tracker chat ID not found.');
+        }
+      } else {
+        console.log('Twitter account not found.');
+      }
+    } catch (error) {
+      console.error('Error in TwitterremoveTrackerChatIdOrDelete:', error);
+    }
+  }
+  async tiktokRemoveTrackerChatIdOrDelete(username: string, chatId: number) {
+    try {
+      // Find the document by twitterAccount
+      const account = await this.TiktokAccountModel.findOne({
+        tiktokAccount: username,
+      });
+
+      if (account) {
+        console.log(account);
+        const { trackerChatId } = account;
+
+        // Check if trackerChatId exists in the array
+        if (trackerChatId.includes(chatId)) {
+          if (trackerChatId.length > 1) {
+            // If there are multiple trackerChatIds, remove the specific chatId
+            return await this.TiktokAccountModel.findOneAndUpdate(
+              { tiktokAccount: username },
+              { $pull: { trackerChatId: chatId } },
+            );
+          } else {
+            // If it's the only trackerChatId, delete the document
+            return await this.TiktokAccountModel.findOneAndDelete({
+              tiktokAccount: username,
+            });
+          }
+          console.log('Tracker chat ID removed or account deleted.');
+        } else {
+          console.log('Tracker chat ID not found.');
+        }
+      } else {
+        console.log('Twitter account not found.');
+      }
+    } catch (error) {
+      console.error('Error in tiktokRemoveTrackerChatIdOrDelete:', error);
     }
   }
 }

@@ -8,11 +8,13 @@ export class TiktokAccount {
   @Prop()
   tiktokAccount: string;
   @Prop()
-  trackerChatId: string;
+  accountId: string;
   @Prop()
-  accountFollowers: string[];
+  trackerChatId: number[];
   @Prop()
-  accountFollowing: string;
+  oldAccountFollowers: any[];
+  @Prop()
+  newAccountFollowers: any[];
 }
 
 export const TiktokAccountSchema = SchemaFactory.createForClass(TiktokAccount);
