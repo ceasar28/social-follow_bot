@@ -11,9 +11,9 @@ export class SocialBotController {
     // return this.botService.handleTwitterCron();
   }
 
-  @HttpCode(HttpStatus.OK)
-  @Get('tiktok')
-  queryTiktok() {
-    return this.botService.handleTiktokCron;
-  }
+  // @HttpCode(HttpStatus.OK)
+  // @Get('tiktok')
+  // queryTiktok() {
+  //   return this.botService.handleTiktokCron;
+  // }
 }

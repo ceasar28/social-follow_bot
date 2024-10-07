@@ -1,6 +1,6 @@
 export const welcomeMessageMarkup = async (userName: string) => {
   return {
-    message: `Hi @${userName},Welcome to social follower Tracker bot`,
+    message: `Hi @${userName},Welcome to Twitter follower Tracker bot`,
 
     keyboard: [
       [
@@ -16,22 +16,6 @@ export const welcomeMessageMarkup = async (userName: string) => {
           callback_data: JSON.stringify({
             command: '/viewX',
             language: 'twitter',
-          }),
-        },
-      ],
-      [
-        {
-          text: 'track tiktok account 🎵',
-          callback_data: JSON.stringify({
-            command: '/trackTiktok',
-            language: 'tiktok',
-          }),
-        },
-        {
-          text: 'view all tracked tiktok account',
-          callback_data: JSON.stringify({
-            command: '/viewTiktok',
-            language: 'tiktok',
           }),
         },
       ],

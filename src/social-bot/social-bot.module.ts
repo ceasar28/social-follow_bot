@@ -9,11 +9,7 @@ import {
   TwitterAccountSchema,
 } from './schemas/twitter.accounts.schema';
 import { User, UserSchema } from './schemas/users.schema';
-import {
-  TiktokAccount,
-  TiktokAccountSchema,
-} from './schemas/tiktok.accounts.schema';
-import { TaskQueue, TaskQueueSchema } from './schemas/taskQueue.schema';
+
 import {
   TiktokJob,
   TiktokJobSchema,
@@ -27,12 +23,6 @@ import {
     DatabaseModule,
     MongooseModule.forFeature([
       { name: TwitterAccount.name, schema: TwitterAccountSchema },
-    ]),
-    MongooseModule.forFeature([
-      { name: TiktokAccount.name, schema: TiktokAccountSchema },
-    ]),
-    MongooseModule.forFeature([
-      { name: TaskQueue.name, schema: TaskQueueSchema },
     ]),
     MongooseModule.forFeature([{ name: User.name, schema: UserSchema }]),
     MongooseModule.forFeature([
