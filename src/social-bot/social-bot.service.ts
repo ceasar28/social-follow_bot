@@ -312,7 +312,7 @@ export class SocialBotService {
         {
           headers: {
             'Content-Type': 'application/json',
-            'x-rapidapi-key': process.env.RAPID_API_KEY2,
+            'x-rapidapi-key': process.env.RAPID_API_KEY,
             'x-rapidapi-host': process.env.RAPID_HOST_TIKTOK,
           },
         },
@@ -331,7 +331,7 @@ export class SocialBotService {
         // Use save method with error handling to prevent duplicates
         await saveTiktokUsername.save();
 
-        if (validAccount.data.data.stats.followerCount < 500) {
+        if (validAccount.data.data.stats.followerCount < 200) {
           // Only fetch paginated data if save is successful
           await this.fetchTiktokPaginatedData(validAccount.data.data.user.id);
           return {
@@ -369,7 +369,7 @@ export class SocialBotService {
         {
           headers: {
             'Content-Type': 'application/json',
-            'x-rapidapi-key': process.env.RAPID_API_KEY2,
+            'x-rapidapi-key': process.env.RAPID_API_KEY,
             'x-rapidapi-host': process.env.RAPID_HOST_TIKTOK,
           },
           params,
@@ -419,7 +419,7 @@ export class SocialBotService {
         {
           headers: {
             'Content-Type': 'application/json',
-            'x-rapidapi-key': process.env.RAPID_API_KEY2,
+            'x-rapidapi-key': process.env.RAPID_API_KEY,
             'x-rapidapi-host': process.env.RAPID_HOST_TIKTOK,
           },
           params,
@@ -502,12 +502,12 @@ export class SocialBotService {
             {
               headers: {
                 'Content-Type': 'application/json',
-                'x-rapidapi-key': process.env.RAPID_API_KEY2,
+                'x-rapidapi-key': process.env.RAPID_API_KEY,
                 'x-rapidapi-host': process.env.RAPID_HOST_TIKTOK,
               },
             },
           );
-          if (validAccount.data.data.stats.followerCount < 500) {
+          if (validAccount.data.data.stats.followerCount < 200) {
             await this.fetchNewFollowTiktokPaginatedData(account.accountId);
 
             await this.TiktokAccountModel.updateOne(
@@ -516,6 +516,7 @@ export class SocialBotService {
               },
               { follwersCount: validAccount.data.data.stats.followerCount },
             );
+            return;
           }
           await this.notifyTiktokByNumber(
             account.follwersCount,
@@ -523,6 +524,7 @@ export class SocialBotService {
             account.trackerChatId,
             account.tiktokAccount,
           );
+          return;
         }),
       );
 
@@ -588,7 +590,7 @@ export class SocialBotService {
   //cronJob
 
   // @Cron('*/1 * * * *')
-  @Cron('*/3 * * * *')
+  @Cron(`${process.env.CRON}`)
   async handleTiktokCron() {
     const jobRunning = await this.TiktokJobModel.find();
     if (jobRunning[0].isJobRunning) {
