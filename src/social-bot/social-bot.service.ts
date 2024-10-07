@@ -473,8 +473,6 @@ export class SocialBotService {
         );
       }
 
-      console.log('Fetched items:', formattedUsers);
-
       if (users.length > 0 && nextCursor) {
         // delay in milliseconds before fetching data
 
