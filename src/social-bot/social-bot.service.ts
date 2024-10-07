@@ -335,7 +335,7 @@ export class SocialBotService {
         // Use save method with error handling to prevent duplicates
         await saveTwitterUsername.save();
 
-        if (validAccount.data.legacy.followers_count <= 1000) {
+        if (validAccount.data.legacy.followers_count <= 500) {
           // Only fetch paginated data if save is successful
           await this.fetchTwitterPaginatedData(validAccount.data.rest_id);
           return {
@@ -523,7 +523,7 @@ export class SocialBotService {
               },
             },
           );
-          if (validAccount.data.legacy.followers_count <= 999) {
+          if (validAccount.data.legacy.followers_count <= 500) {
             await this.TwitterAccountModel.updateOne(
               { twitterAccount: account.twitterAccount },
               { follwersCount: validAccount.data.legacy.followers_count },
@@ -613,7 +613,7 @@ export class SocialBotService {
   //cronJob
 
   // @Cron('*/30 * * * *')
-  @Cron('*/3 * * * *')
+  @Cron(`${process.env.CRON}`)
   async handleTwitterCron() {
     const jobRunning = await this.TwitterJobModel.find();
     if (jobRunning[0].isJobRunning) {
