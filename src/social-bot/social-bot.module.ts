@@ -13,7 +13,7 @@ import {
   TiktokAccount,
   TiktokAccountSchema,
 } from './schemas/tiktok.accounts.schema';
-import { Session, SessionSchema } from './schemas/session.schema';
+import { TaskQueue, TaskQueueSchema } from './schemas/taskQueue.schema';
 import {
   TiktokJob,
   TiktokJobSchema,
@@ -31,7 +31,9 @@ import {
     MongooseModule.forFeature([
       { name: TiktokAccount.name, schema: TiktokAccountSchema },
     ]),
-    MongooseModule.forFeature([{ name: Session.name, schema: SessionSchema }]),
+    MongooseModule.forFeature([
+      { name: TaskQueue.name, schema: TaskQueueSchema },
+    ]),
     MongooseModule.forFeature([{ name: User.name, schema: UserSchema }]),
     MongooseModule.forFeature([
       { name: TwitterJob.name, schema: TwitterJobSchema },

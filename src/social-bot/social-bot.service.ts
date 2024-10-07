@@ -13,7 +13,7 @@ import {
   welcomeMessageMarkup,
 } from './markups';
 import * as dotenv from 'dotenv';
-import { Session } from './schemas/session.schema';
+import { TaskQueue } from './schemas/taskQueue.schema';
 import { Cron } from '@nestjs/schedule';
 import { TiktokJob, TwitterJob } from './schemas/job.schema';
 
@@ -32,7 +32,8 @@ export class SocialBotService {
     private readonly TwitterAccountModel: Model<TwitterAccount>,
     @InjectModel(TiktokAccount.name)
     private readonly TiktokAccountModel: Model<TiktokAccount>,
-    @InjectModel(Session.name) private readonly SessionModel: Model<Session>,
+    @InjectModel(TaskQueue.name)
+    private readonly TaskQueueModel: Model<TaskQueue>,
     @InjectModel(User.name) private readonly UserModel: Model<User>,
     @InjectModel(TwitterJob.name)
     private readonly TwitterJobModel: Model<TwitterJob>,
@@ -424,19 +425,28 @@ export class SocialBotService {
           trackerChatId: [chatId],
           twitterAccount: username,
           accountId: validAccount.data.rest_id,
+          follwersCount: validAccount.data.legacy.followers_count,
         });
 
         // Use save method with error handling to prevent duplicates
         await saveTwitterUsername.save();
 
-        // Only fetch paginated data if save is successful
-        await this.fetchTwitterPaginatedData(validAccount.data.rest_id);
+        if (validAccount.data.legacy.followers_count <= 1000) {
+          // Only fetch paginated data if save is successful
+          await this.fetchTwitterPaginatedData(validAccount.data.rest_id);
+          return {
+            trackerChatId: [chatId],
+            twitterAccount: username,
+            accountId: validAccount.data.rest_id,
+            follwersCount: validAccount.data.legacy.followers_count,
+          };
+        }
         return {
           trackerChatId: [chatId],
           twitterAccount: username,
           accountId: validAccount.data.rest_id,
+          follwersCount: validAccount.data.legacy.followers_count,
         };
-        return;
       }
     } catch (error) {
       console.error('Error validating Twitter account:', error);
@@ -455,7 +465,7 @@ export class SocialBotService {
       const params = cursor ? { cursor } : {};
 
       const response = await this.httpService.axiosRef.get(
-        `https://twitter-api47.p.rapidapi.com/v2/user/followers?userId=${userId}`,
+        `https://twitter-api47.p.rapidapi.com/v2/user/followers-list?userId=${userId}&count=200`,
         {
           headers: {
             'Content-Type': 'application/json',
@@ -466,10 +476,10 @@ export class SocialBotService {
         },
       );
 
-      const { users, cursor: nextCursor } = response.data;
+      const { users, cursor: next_cursor } = response.data;
       const formattedUsers = users.map((user) => ({
-        UsersuserId: user.rest_id,
-        username: user.legacy.screen_name,
+        UsersuserId: user.id_str,
+        username: user.screen_name,
       }));
 
       // Use findOneAndUpdate with error handling
@@ -484,10 +494,12 @@ export class SocialBotService {
         // { new: true, useFindAndModify: false },
       );
 
-      console.log('Fetched items:', formattedUsers);
+      console.log('Fetched items:', response.data);
 
-      if (users.length > 0 && nextCursor) {
-        await this.fetchTwitterPaginatedData(userId, nextCursor);
+      if (users.length > 0 && next_cursor > 0) {
+        // delay in milliseconds before fetching data
+
+        await this.fetchTwitterPaginatedData(userId, next_cursor);
       } else {
         console.log('No more items to fetch.');
       }
@@ -506,7 +518,7 @@ export class SocialBotService {
       const params = cursor ? { cursor } : {};
 
       const response = await this.httpService.axiosRef.get(
-        `https://twitter-api47.p.rapidapi.com/v2/user/followers?userId=${userId}`,
+        `https://twitter-api47.p.rapidapi.com/v2/user/followers-list?userId=${userId}&count=200`,
         {
           headers: {
             'Content-Type': 'application/json',
@@ -520,7 +532,7 @@ export class SocialBotService {
       const { users, cursor: nextCursor } = response.data;
       const formattedUsers = users.map((user) => ({
         UsersuserId: user.rest_id,
-        username: user.legacy.screen_name,
+        username: user.screen_name,
       }));
 
       // Clear newAccountFollowers on the first call
@@ -529,6 +541,7 @@ export class SocialBotService {
           accountId: userId,
         });
         // set the olddata to be the newOne
+
         await this.TwitterAccountModel.updateOne(
           { _id: olddata._id },
           {
@@ -536,6 +549,7 @@ export class SocialBotService {
           },
           //   { new: true, useFindAndModify: false },
         );
+
         await this.TwitterAccountModel.updateOne(
           { accountId: userId },
           {
@@ -558,6 +572,8 @@ export class SocialBotService {
       console.log('Fetched items:', formattedUsers);
 
       if (users.length > 0 && nextCursor) {
+        // delay in milliseconds before fetching data
+
         await this.fetchNewFollowTwitterPaginatedData(
           userId,
           id,
@@ -566,6 +582,7 @@ export class SocialBotService {
         );
       } else {
         console.log('No more items to fetch.');
+
         const lastupdatedData = await this.TwitterAccountModel.findOne({
           accountId: userId,
         });
@@ -593,10 +610,39 @@ export class SocialBotService {
       // Fetch new followers in parallel for all accounts
       await Promise.all(
         allAccounts.map(async (account) => {
-          await this.fetchNewFollowTwitterPaginatedData(
-            account.accountId,
-            account._id,
+          // Fetch the valid Twitter account information
+          const validAccount = await this.httpService.axiosRef.get(
+            `https://twitter-api47.p.rapidapi.com/v2/user/by-username?username=${account.twitterAccount}`,
+            {
+              headers: {
+                'Content-Type': 'application/json',
+                'x-rapidapi-key': process.env.RAPID_API_KEY,
+                'x-rapidapi-host': process.env.RAPID_HOST,
+              },
+            },
           );
+          if (validAccount.data.legacy.followers_count <= 1000) {
+            await this.fetchNewFollowTwitterPaginatedData(
+              account.accountId,
+              account._id,
+            );
+            await this.TwitterAccountModel.updateOne(
+              { twitterAccount: account.twitterAccount },
+              { follwersCount: validAccount.data.legacy.followers_count },
+            );
+          }
+          await this.TwitterAccountModel.updateOne(
+            { twitterAccount: account.twitterAccount },
+            { follwersCount: validAccount.data.legacy.followers_count },
+          );
+          await this.notifyTwitterByNumber(
+            account.follwersCount,
+            validAccount.data.legacy.followers_count,
+            account.trackerChatId,
+            account.twitterAccount,
+          );
+
+          return;
         }),
       );
 
@@ -634,6 +680,26 @@ export class SocialBotService {
       } else {
         console.log('No new elements added.');
       }
+    } catch (error) {
+      console.error('Error sending notifications:', error);
+    }
+  };
+  notifyTwitterByNumber = async (
+    oldFollowCount,
+    newFollowCount,
+    chatIds,
+    account,
+  ) => {
+    try {
+      if (newFollowCount - oldFollowCount > 0) {
+        chatIds.forEach(async (chatId) => {
+          return await this.socialBot.sendMessage(
+            chatId,
+            `Follow alert  🚨:\n\n${newFollowCount - oldFollowCount} new accounts followed @${account} twitter account`,
+          );
+        });
+      }
+      return;
     } catch (error) {
       console.error('Error sending notifications:', error);
     }
@@ -892,8 +958,10 @@ export class SocialBotService {
     }
   };
 
-  // //cronJob
-  @Cron('*/30 * * * *')
+  //cronJob
+
+  // @Cron('*/30 * * * *')
+  @Cron('*/3 * * * *')
   async handleTwitterCron() {
     const jobRunning = await this.TwitterJobModel.find();
     if (jobRunning[0].isJobRunning) {

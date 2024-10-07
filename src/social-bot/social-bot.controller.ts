@@ -8,7 +8,7 @@ export class SocialBotController {
   @HttpCode(HttpStatus.OK)
   @Get('twitter')
   querytwitter() {
-    return this.botService.handleTwitterCron();
+    // return this.botService.handleTwitterCron();
   }
 
   @HttpCode(HttpStatus.OK)

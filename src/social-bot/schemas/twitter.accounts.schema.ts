@@ -10,6 +10,8 @@ export class TwitterAccount {
   @Prop()
   accountId: string;
   @Prop()
+  follwersCount: number;
+  @Prop()
   trackerChatId: number[];
   @Prop()
   oldAccountFollowers: any[];
