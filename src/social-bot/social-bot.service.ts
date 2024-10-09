@@ -490,6 +490,7 @@ export class SocialBotService {
           }),
         );
       }
+      console.log('no account to monitor');
       return;
 
       // After updating, send notifications for new followers
