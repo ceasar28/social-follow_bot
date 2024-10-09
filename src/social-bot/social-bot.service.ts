@@ -328,30 +328,22 @@ export class SocialBotService {
         const saveTwitterUsername = new this.TwitterAccountModel({
           trackerChatId: [chatId],
           twitterAccount: username,
-          accountId: validAccount.data.data.data.result.rest_id,
+          accountId: validAccount.data.data.data.user.result.rest_id,
           follwersCount:
-            validAccount.data.data.data.result.legacy.followers_count,
+            validAccount.data.data.data.user.result.legacy.followers_count,
         });
 
         // Use save method with error handling to prevent duplicates
         await saveTwitterUsername.save();
 
-        if (validAccount.data.legacy.followers_count <= 500) {
-          // Only fetch paginated data if save is successful
-          await this.fetchTwitterPaginatedData(username);
-          return {
-            trackerChatId: [chatId],
-            twitterAccount: username,
-            accountId: validAccount.data.data.data.result.rest_id,
-            follwersCount:
-              validAccount.data.data.data.result.legacy.followers_count,
-          };
-        }
+        // Only fetch paginated data if save is successful
+        await this.fetchTwitterPaginatedData(username);
         return {
           trackerChatId: [chatId],
           twitterAccount: username,
-          accountId: validAccount.data.rest_id,
-          follwersCount: validAccount.data.legacy.followers_count,
+          accountId: validAccount.data.data.data.user.result.rest_id,
+          follwersCount:
+            validAccount.data.data.data.user.result.legacy.followers_count,
         };
       }
     } catch (error) {
@@ -388,9 +380,9 @@ export class SocialBotService {
       await this.TwitterAccountModel.updateOne(
         { twitterAccount: username },
         {
-          $push: {
-            newAccountFollowers: { $each: formattedUsers },
-            oldAccountFollowers: { $each: formattedUsers },
+          $set: {
+            newAccountFollowers: formattedUsers,
+            oldAccountFollowers: formattedUsers,
           },
         },
         // { new: true, useFindAndModify: false },
@@ -436,8 +428,8 @@ export class SocialBotService {
       await this.TwitterAccountModel.updateOne(
         { twitterAccount: username },
         {
-          $push: {
-            newAccountFollowers: { $each: formattedUsers },
+          $set: {
+            newAccountFollowers: formattedUsers,
           },
         },
         //   { new: true, useFindAndModify: false },
@@ -465,36 +457,40 @@ export class SocialBotService {
       const allAccounts = await this.TwitterAccountModel.find();
       console.log(allAccounts);
 
-      // Fetch new followers in parallel for all accounts
-      await Promise.all(
-        allAccounts.map(async (account) => {
-          // Fetch the valid Twitter account information
-          const validAccount = await this.httpService.axiosRef.get(
-            `https://twitter-api-v1-1-enterprise.p.rapidapi.com/base/apitools/userByScreenNameV2?screenName=${account.twitterAccount}&resFormat=json&apiKey=${process.env.TWITTER_API_KEY}`,
-            {
-              headers: {
-                'Content-Type': 'application/json',
-                'x-rapidapi-key': process.env.RAPID_API_KEY,
-                'x-rapidapi-host': process.env.RAPID_HOST,
-              },
-            },
-          );
-          if (validAccount.data.msg === 'SUCCESS') {
-            await this.TwitterAccountModel.updateOne(
-              { twitterAccount: account.twitterAccount },
+      if (allAccounts.length > 0) {
+        await Promise.all(
+          allAccounts.map(async (account) => {
+            // Fetch the valid Twitter account information
+            const validAccount = await this.httpService.axiosRef.get(
+              `https://twitter-api-v1-1-enterprise.p.rapidapi.com/base/apitools/userByScreenNameV2?screenName=${account.twitterAccount}&resFormat=json&apiKey=${process.env.TWITTER_API_KEY}`,
               {
-                follwersCount: validAccount.data.legacy.followers_count,
+                headers: {
+                  'Content-Type': 'application/json',
+                  'x-rapidapi-key': process.env.RAPID_API_KEY,
+                  'x-rapidapi-host': process.env.RAPID_HOST,
+                },
               },
             );
-            await this.fetchNewFollowTwitterPaginatedData(
-              account.twitterAccount,
-            );
-            return;
-          }
+            if (validAccount.data.msg === 'SUCCESS') {
+              await this.TwitterAccountModel.updateOne(
+                { twitterAccount: account.twitterAccount },
+                {
+                  follwersCount:
+                    validAccount.data.data.data.user.result.legacy
+                      .followers_count,
+                },
+              );
+              await this.fetchNewFollowTwitterPaginatedData(
+                account.twitterAccount,
+              );
+              return;
+            }
 
-          return;
-        }),
-      );
+            return;
+          }),
+        );
+      }
+      return;
 
       // After updating, send notifications for new followers
     } catch (error) {
@@ -525,6 +521,10 @@ export class SocialBotService {
               console.log(error);
             }
           }),
+        );
+        await this.TwitterAccountModel.updateOne(
+          { twitterAccount: account },
+          { $set: { oldAccountFollowers: newArray } },
         );
         return;
       } else {
