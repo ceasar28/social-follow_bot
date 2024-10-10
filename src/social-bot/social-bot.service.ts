@@ -63,7 +63,8 @@ export class SocialBotService {
       }
 
       const addMatch = extractPlatformAndUsername(msg.text.trim());
-      const delRegex = /^\/del\s+(twitter|tiktok)\s+(@\w+)$/;
+      // const delRegex = /^\/del\s+(twitter|tiktok)\s+(@\w+)$/;
+      const delRegex = /^\/del\s+(twitter|tiktok)\s+@([\w.]+)$/;
       const delMatch = msg.text.trim().match(delRegex);
 
       if (msg.text.trim() === '/start') {
