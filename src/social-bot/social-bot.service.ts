@@ -51,7 +51,8 @@ export class SocialBotService {
     try {
       await this.socialBot.sendChatAction(msg.chat.id, 'typing');
       function extractPlatformAndUsername(text) {
-        const regex = /\/(twitter|tiktok) @(\w+)/;
+        // Adjusted regex pattern to match the username with more characters and optional whitespace
+        const regex = /\/(twitter|tiktok)\s*@([\w.]+)/;
         const match = text.match(regex);
 
         if (match) {
