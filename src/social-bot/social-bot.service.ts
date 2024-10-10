@@ -48,7 +48,8 @@ export class SocialBotService {
     try {
       await this.socialBot.sendChatAction(msg.chat.id, 'typing');
       function extractPlatformAndUsername(text) {
-        const regex = /\/(twitter|tiktok) @(\w+)/;
+        // Adjusted regex pattern to match the username with more characters and optional whitespace
+        const regex = /\/(twitter|tiktok)\s*@([\w.]+)/;
         const match = text.match(regex);
 
         if (match) {
@@ -307,45 +308,36 @@ export class SocialBotService {
 
       // Fetch the valid Tiktok account information
       const validAccount = await this.httpService.axiosRef.get(
-        `https://tiktok-scraper7.p.rapidapi.com/user/info?unique_id=${username}`,
-
+        `https://tiktok-data-api2.p.rapidapi.com/user/follower?username=${username}&count=20`,
         {
           headers: {
             'Content-Type': 'application/json',
             'x-rapidapi-key': process.env.RAPID_API_KEY,
-            'x-rapidapi-host': process.env.RAPID_HOST_TIKTOK,
+            'x-rapidapi-host': process.env.RAPID_HOST,
           },
         },
       );
 
       // If valid account data is returned
-      if (validAccount.data.data.user) {
+      if (validAccount.data.code === 200) {
         // Prepare to save new account data
         const saveTiktokUsername = new this.TiktokAccountModel({
           trackerChatId: [chatId],
           tiktokAccount: username,
-          accountId: validAccount.data.data.user.id,
-          follwersCount: validAccount.data.data.stats.followerCount,
+          accountId: '',
+          follwersCount: validAccount.data.data.total,
         });
 
         // Use save method with error handling to prevent duplicates
         await saveTiktokUsername.save();
 
-        if (validAccount.data.data.stats.followerCount < 200) {
-          // Only fetch paginated data if save is successful
-          await this.fetchTiktokPaginatedData(validAccount.data.data.user.id);
-          return {
-            trackerChatId: [chatId],
-            tiktokAccount: username,
-            accountId: validAccount.data.data.user.id,
-            follwersCount: validAccount.data.data.stats.followerCount,
-          };
-        }
+        // Only fetch paginated data if save is successful
+        await this.fetchTiktokPaginatedData(username);
         return {
           trackerChatId: [chatId],
           tiktokAccount: username,
-          accountId: validAccount.data.data.user.id,
-          follwersCount: validAccount.data.data.stats.followerCount,
+          accountId: '',
+          follwersCount: validAccount.data.data.total,
         };
       }
     } catch (error) {
@@ -357,132 +349,87 @@ export class SocialBotService {
     }
   };
 
-  fetchTiktokPaginatedData = async (
-    userId: string,
-    time?: number,
-  ): Promise<void> => {
+  fetchTiktokPaginatedData = async (username: string): Promise<void> => {
     try {
-      const params = time ? { time, count: 200 } : { count: 200 };
+      // const min_time = this.getLastHourUnix();
 
       const response = await this.httpService.axiosRef.get(
-        `https://tiktok-scraper7.p.rapidapi.com/user/followers?user_id=${userId}`,
+        `https://tiktok-data-api2.p.rapidapi.com/user/follower?username=${username}&count=20`,
         {
           headers: {
             'Content-Type': 'application/json',
             'x-rapidapi-key': process.env.RAPID_API_KEY,
-            'x-rapidapi-host': process.env.RAPID_HOST_TIKTOK,
+            'x-rapidapi-host': process.env.RAPID_HOST,
           },
-          params,
         },
       );
 
       const { data } = response.data;
       const formattedUsers = data.followers.map((user) => ({
-        UsersuserId: user.id,
+        UsersuserId: user.uid,
         username: user.unique_id,
       }));
 
       // Use findOneAndUpdate with error handling
       await this.TiktokAccountModel.updateOne(
-        { accountId: userId },
+        { tiktokAccount: username },
         {
-          $push: {
-            newAccountFollowers: { $each: formattedUsers },
-            oldAccountFollowers: { $each: formattedUsers },
+          $set: {
+            newAccountFollowers: formattedUsers,
+            oldAccountFollowers: formattedUsers,
           },
         },
         // { new: true, useFindAndModify: false },
       );
 
       console.log('Fetched items:', formattedUsers);
-
-      if (data.followers > 0 && data.hasMore) {
-        await this.fetchTiktokPaginatedData(userId, data.time);
-      } else {
-        console.log('No more items to fetch.');
-      }
     } catch (error) {
       console.error('Error fetching data:', error);
     }
   };
 
   fetchNewFollowTiktokPaginatedData = async (
-    userId: string,
-    time?: string,
-    firstCall: boolean = true,
+    username: string,
   ): Promise<void> => {
     try {
-      const params = time ? { time, count: 200 } : { count: 200 };
-
       const response = await this.httpService.axiosRef.get(
-        `https://tiktok-scraper7.p.rapidapi.com/user/followers?user_id=${userId}`,
+        `https://tiktok-data-api2.p.rapidapi.com/user/follower?username=${username}&count=20`,
         {
           headers: {
             'Content-Type': 'application/json',
             'x-rapidapi-key': process.env.RAPID_API_KEY,
-            'x-rapidapi-host': process.env.RAPID_HOST_TIKTOK,
+            'x-rapidapi-host': process.env.RAPID_HOST,
           },
-          params,
         },
       );
 
       const { data } = response.data;
       const formattedUsers = data.followers.map((user) => ({
-        UsersuserId: user.id,
+        UsersuserId: user.uid,
         username: user.unique_id,
       }));
 
-      // Clear newAccountFollowers on the first call
-      if (firstCall) {
-        const olddata = await this.TiktokAccountModel.findOne({
-          accountId: userId,
-        });
-        // set the olddata to be the newOne
-        await this.TiktokAccountModel.updateOne(
-          { _id: olddata._id },
-          {
-            oldAccountFollowers: olddata.newAccountFollowers,
-          },
-          //   { new: true, useFindAndModify: false },
-        );
-        await this.TiktokAccountModel.updateOne(
-          { accountId: userId },
-          {
+      await this.TiktokAccountModel.updateOne(
+        { tiktokAccount: username },
+        {
+          $set: {
             newAccountFollowers: formattedUsers,
           },
-          //   { new: true, useFindAndModify: false },
-        );
-      } else {
-        await this.TiktokAccountModel.updateOne(
-          { accountId: userId },
-          {
-            $push: {
-              newAccountFollowers: { $each: formattedUsers },
-            },
-          },
-          //   { new: true, useFindAndModify: false },
+        },
+        //   { new: true, useFindAndModify: false },
+      );
+      const lastupdatedData = await this.TiktokAccountModel.findOne({
+        tiktokAccount: username,
+      });
+      if (lastupdatedData) {
+        await this.notifyTiktok(
+          lastupdatedData.oldAccountFollowers,
+          lastupdatedData.newAccountFollowers,
+          lastupdatedData.trackerChatId,
+          lastupdatedData.tiktokAccount,
         );
       }
-
-      console.log('Fetched items:', formattedUsers);
-
-      if (data.followers > 0 && data.hasMore) {
-        await this.fetchNewFollowTiktokPaginatedData(userId, data.time, false);
-      } else {
-        console.log('No more items to fetch.');
-        const lastupdatedData = await this.TiktokAccountModel.findOne({
-          accountId: userId,
-        });
-        if (lastupdatedData) {
-          await this.notifyTiktok(
-            lastupdatedData.oldAccountFollowers,
-            lastupdatedData.newAccountFollowers,
-            lastupdatedData.trackerChatId,
-            lastupdatedData.tiktokAccount,
-          );
-        }
-        return;
-      }
+      return;
     } catch (error) {
       console.error('Error fetching data:', error);
     }
@@ -493,40 +440,40 @@ export class SocialBotService {
       const allAccounts = await this.TiktokAccountModel.find();
       console.log(allAccounts);
 
-      // Fetch new followers in parallel for all accounts
-      await Promise.all(
-        allAccounts.map(async (account) => {
-          const validAccount = await this.httpService.axiosRef.get(
-            `https://tiktok-scraper7.p.rapidapi.com/user/info?unique_id=${account.tiktokAccount}`,
-
-            {
-              headers: {
-                'Content-Type': 'application/json',
-                'x-rapidapi-key': process.env.RAPID_API_KEY,
-                'x-rapidapi-host': process.env.RAPID_HOST_TIKTOK,
-              },
-            },
-          );
-          if (validAccount.data.data.stats.followerCount < 200) {
-            await this.fetchNewFollowTiktokPaginatedData(account.accountId);
-
-            await this.TiktokAccountModel.updateOne(
+      if (allAccounts.length > 0) {
+        // Fetch new followers in parallel for all accounts
+        await Promise.all(
+          allAccounts.map(async (account) => {
+            const validAccount = await this.httpService.axiosRef.get(
+              `https://tiktok-data-api2.p.rapidapi.com/user/follower?username=${account.tiktokAccount}&count=20`,
               {
-                tiktokAccount: account.tiktokAccount,
+                headers: {
+                  'Content-Type': 'application/json',
+                  'x-rapidapi-key': process.env.RAPID_API_KEY,
+                  'x-rapidapi-host': process.env.RAPID_HOST,
+                },
               },
-              { follwersCount: validAccount.data.data.stats.followerCount },
             );
+            if (validAccount.data.code === 200) {
+              await this.TiktokAccountModel.updateOne(
+                {
+                  tiktokAccount: account.tiktokAccount,
+                },
+                { follwersCount: validAccount.data.data.total },
+              );
+              await this.fetchNewFollowTiktokPaginatedData(
+                account.tiktokAccount,
+              );
+              return;
+            }
+            await this.fetchNewFollowTiktokPaginatedData(account.tiktokAccount);
             return;
-          }
-          await this.notifyTiktokByNumber(
-            account.follwersCount,
-            validAccount.data.data.stats.followerCount,
-            account.trackerChatId,
-            account.tiktokAccount,
-          );
-          return;
-        }),
-      );
+          }),
+        );
+        return;
+      }
+      console.log('no account to monitor');
+      return;
 
       // After updating, send notifications for new followers
     } catch (error) {
@@ -558,8 +505,17 @@ export class SocialBotService {
             }
           }),
         );
+
+        await this.TiktokAccountModel.updateOne(
+          { tiktokAccount: account },
+          { $set: { oldAccountFollowers: newArray } },
+        );
         return;
       } else {
+        await this.TiktokAccountModel.updateOne(
+          { tiktokAccount: account },
+          { $set: { oldAccountFollowers: newArray } },
+        );
         console.log('No new elements added.');
       }
     } catch (error) {
@@ -657,5 +613,18 @@ export class SocialBotService {
     } catch (error) {
       console.error('Error in tiktokRemoveTrackerChatIdOrDelete:', error);
     }
+  }
+
+  getLastTwoMinutesUnix(): number {
+    const currentTime = Math.floor(Date.now() / 1000); // Get current time in seconds (Unix timestamp)
+    const twoMinutesInSeconds = 2 * 60; // 2 minutes converted to seconds
+    const lastTwoMinutes = currentTime - twoMinutesInSeconds; // Subtract 2 minutes from current time
+    return lastTwoMinutes;
+  }
+  getLastHourUnix(): number {
+    const currentTime = Math.floor(Date.now() / 1000); // Get current time in seconds (Unix timestamp)
+    const oneHourInSeconds = 1 * 60 * 60; // 1 hour converted to seconds (3600 seconds)
+    const lastHour = currentTime - oneHourInSeconds; // Subtract 1 hour from current time
+    return lastHour;
   }
 }
