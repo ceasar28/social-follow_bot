@@ -94,7 +94,7 @@ export class SocialBotService {
             addMatch.username,
             msg.chat.id,
           );
-          if (validAccount.accountId) {
+          if (validAccount.tiktokAccount) {
             const account = await this.TiktokAccountModel.findOne({
               tiktokAccount: `${validAccount.tiktokAccount}`,
             });
