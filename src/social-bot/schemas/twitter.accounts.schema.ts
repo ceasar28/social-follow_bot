@@ -17,6 +17,8 @@ export class TwitterAccount {
   oldAccountFollowers: any[];
   @Prop()
   newAccountFollowers: any[];
+  @Prop()
+  alertedFollowers: any[];
 }
 
 export const TwitterAccountSchema =

@@ -103,7 +103,7 @@ export class SocialBotService {
               console.log(account);
               return await this.socialBot.sendMessage(
                 msg.chat.id,
-                `@${addMatch.username}twitter will be monitored.`,
+                `@${addMatch.username} twitter will be monitored.`,
               );
             }
             return;
@@ -444,6 +444,7 @@ export class SocialBotService {
           lastupdatedData.newAccountFollowers,
           lastupdatedData.trackerChatId,
           lastupdatedData.twitterAccount,
+          lastupdatedData.alertedFollowers,
         );
       }
 
@@ -500,7 +501,13 @@ export class SocialBotService {
     }
   };
 
-  notifyTwitter = async (oldArray, newArray, chatIds, account) => {
+  notifyTwitter = async (
+    oldArray,
+    newArray,
+    chatIds,
+    account,
+    alertedFollowers,
+  ) => {
     try {
       // Use filter to find new follows
       const addedFollows = newArray.filter((newItem) => {
@@ -509,14 +516,21 @@ export class SocialBotService {
         );
       });
 
-      if (addedFollows.length > 0) {
+      // filter to check for already alerted followers
+      const nonAlertedFollwers = addedFollows.filter(
+        (obj1) =>
+          !alertedFollowers.some((obj2) => obj2.username === obj1.username),
+      );
+
+      if (nonAlertedFollwers.length > 0) {
         await Promise.all(
-          addedFollows.map(async (newFollow) => {
+          nonAlertedFollwers.map(async (newFollow) => {
             try {
               chatIds.forEach(async (chatId) => {
                 await this.socialBot.sendMessage(
                   chatId,
-                  `Follow alert  🚨:\n\n@${newFollow.username} followed @${account} twitter account`,
+                  `Follow alert  🚨:\n\n<a href="https://x.com/${newFollow.username}">@${newFollow.username}</a> followed @${account} twitter account`,
+                  { parse_mode: 'HTML' },
                 );
               });
             } catch (error) {
@@ -526,7 +540,10 @@ export class SocialBotService {
         );
         await this.TwitterAccountModel.updateOne(
           { twitterAccount: account },
-          { $set: { oldAccountFollowers: newArray } },
+          {
+            $set: { oldAccountFollowers: newArray }, // Set the new followers array
+            $push: { alertedFollowers: { $each: nonAlertedFollwers } }, // Push each non-alerted follower
+          },
         );
         return;
       } else {
