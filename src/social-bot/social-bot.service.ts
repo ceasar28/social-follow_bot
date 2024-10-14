@@ -10,6 +10,7 @@ import * as dotenv from 'dotenv';
 
 import { Cron } from '@nestjs/schedule';
 import { TiktokJob } from './schemas/job.schema';
+import { AddedFollower } from './schemas/addedFollower.schema';
 
 dotenv.config();
 
@@ -27,6 +28,8 @@ export class SocialBotService {
     @InjectModel(User.name) private readonly UserModel: Model<User>,
     @InjectModel(TiktokJob.name)
     private readonly TiktokJobModel: Model<TiktokJob>,
+    @InjectModel(AddedFollower.name)
+    private readonly AddedFollowerModel: Model<AddedFollower>,
   ) {
     this.socialBot = new TelegramBot(token, { polling: true });
     this.socialBot.on('message', this.handleRecievedMessages);
@@ -64,6 +67,7 @@ export class SocialBotService {
 
       const addMatch = extractPlatformAndUsername(msg.text.trim());
       // const delRegex = /^\/del\s+(twitter|tiktok)\s+(@\w+)$/;
+      // const delRegex = /^\/del\s+(twitter|tiktok)\s+@([\w.]+)$/;
       const delRegex = /^\/del\s+(twitter|tiktok)\s+@([\w.]+)$/;
       const delMatch = msg.text.trim().match(delRegex);
 
@@ -118,13 +122,13 @@ export class SocialBotService {
           return;
         } else if (platform == 'tiktok') {
           const deletedAccount = await this.tiktokRemoveTrackerChatIdOrDelete(
-            username.slice(1),
+            username,
             msg.chat.id,
           );
           if (deletedAccount) {
             return await this.socialBot.sendMessage(
               msg.chat.id,
-              `${deletedAccount.tiktokAccount} has been removed`,
+              `@${deletedAccount.tiktokAccount} has been removed`,
             );
           }
           return await this.socialBot.sendMessage(
@@ -484,6 +488,7 @@ export class SocialBotService {
 
   notifyTiktok = async (oldArray, newArray, chatIds, account) => {
     try {
+      // const alertedFollowers = await this.AddedFollowerModel.find();
       // Use filter to find new follows
       const addedFollows = newArray.filter((newItem) => {
         return !oldArray.some(
@@ -498,7 +503,8 @@ export class SocialBotService {
               chatIds.forEach(async (chatId) => {
                 await this.socialBot.sendMessage(
                   chatId,
-                  `Follow alert  🚨:\n\n@${newFollow.username} followed @${account} tiktok Account`,
+                  `Follow alert  🚨:\n\n<a href="https://www.tiktok.com/@${newFollow.username}">@${newFollow.username}</a> followed @${account} tiktok Account`,
+                  { parse_mode: 'HTML' },
                 );
               });
             } catch (error) {
@@ -581,6 +587,7 @@ export class SocialBotService {
 
   async tiktokRemoveTrackerChatIdOrDelete(username: string, chatId: number) {
     try {
+      console.log(username);
       // Find the document by twitterAccount
       const account = await this.TiktokAccountModel.findOne({
         tiktokAccount: username,
@@ -604,7 +611,6 @@ export class SocialBotService {
               tiktokAccount: username,
             });
           }
-          console.log('Tracker chat ID removed or account deleted.');
         } else {
           console.log('Tracker chat ID not found.');
         }
