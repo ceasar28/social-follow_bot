@@ -10,10 +10,6 @@ import {
   TiktokAccountSchema,
 } from './schemas/tiktok.accounts.schema';
 import { TiktokJob, TiktokJobSchema } from './schemas/job.schema';
-import {
-  AddedFollower,
-  AddedFollowerSchema,
-} from './schemas/addedFollower.schema';
 
 @Module({
   imports: [
@@ -25,9 +21,6 @@ import {
     MongooseModule.forFeature([{ name: User.name, schema: UserSchema }]),
     MongooseModule.forFeature([
       { name: TiktokJob.name, schema: TiktokJobSchema },
-    ]),
-    MongooseModule.forFeature([
-      { name: AddedFollower.name, schema: AddedFollowerSchema },
     ]),
   ],
   providers: [SocialBotService],

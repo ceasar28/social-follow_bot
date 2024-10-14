@@ -10,7 +10,6 @@ import * as dotenv from 'dotenv';
 
 import { Cron } from '@nestjs/schedule';
 import { TiktokJob } from './schemas/job.schema';
-import { AddedFollower } from './schemas/addedFollower.schema';
 
 dotenv.config();
 
@@ -28,8 +27,6 @@ export class SocialBotService {
     @InjectModel(User.name) private readonly UserModel: Model<User>,
     @InjectModel(TiktokJob.name)
     private readonly TiktokJobModel: Model<TiktokJob>,
-    @InjectModel(AddedFollower.name)
-    private readonly AddedFollowerModel: Model<AddedFollower>,
   ) {
     this.socialBot = new TelegramBot(token, { polling: true });
     this.socialBot.on('message', this.handleRecievedMessages);
@@ -432,6 +429,7 @@ export class SocialBotService {
           lastupdatedData.newAccountFollowers,
           lastupdatedData.trackerChatId,
           lastupdatedData.tiktokAccount,
+          lastupdatedData.alertedFollowers,
         );
       }
       return;
@@ -486,9 +484,14 @@ export class SocialBotService {
     }
   };
 
-  notifyTiktok = async (oldArray, newArray, chatIds, account) => {
+  notifyTiktok = async (
+    oldArray,
+    newArray,
+    chatIds,
+    account,
+    alertedFollowers,
+  ) => {
     try {
-      // const alertedFollowers = await this.AddedFollowerModel.find();
       // Use filter to find new follows
       const addedFollows = newArray.filter((newItem) => {
         return !oldArray.some(
@@ -496,9 +499,15 @@ export class SocialBotService {
         );
       });
 
-      if (addedFollows.length > 0) {
+      // filter to check for already alerted followers
+      const nonAlertedFollwers = addedFollows.filter(
+        (obj1) =>
+          !alertedFollowers.some((obj2) => obj2.username === obj1.username),
+      );
+
+      if (nonAlertedFollwers.length > 0) {
         await Promise.all(
-          addedFollows.map(async (newFollow) => {
+          nonAlertedFollwers.map(async (newFollow) => {
             try {
               chatIds.forEach(async (chatId) => {
                 await this.socialBot.sendMessage(
@@ -514,8 +523,11 @@ export class SocialBotService {
         );
 
         await this.TiktokAccountModel.updateOne(
-          { tiktokAccount: account },
-          { $set: { oldAccountFollowers: newArray } },
+          { tiktokAccount: account }, // Filter criteria
+          {
+            $set: { oldAccountFollowers: newArray }, // Set the new followers array
+            $push: { alertedFollowers: { $each: nonAlertedFollwers } }, // Push each non-alerted follower
+          },
         );
         return;
       } else {
@@ -530,26 +542,26 @@ export class SocialBotService {
     }
   };
 
-  notifyTiktokByNumber = async (
-    oldFollowCount,
-    newFollowCount,
-    chatIds,
-    account,
-  ) => {
-    try {
-      if (newFollowCount - oldFollowCount > 0) {
-        chatIds.forEach(async (chatId) => {
-          return await this.socialBot.sendMessage(
-            chatId,
-            `Follow alert  🚨:\n\n${newFollowCount - oldFollowCount} followed @${account} tiktok Account`,
-          );
-        });
-      }
-      return;
-    } catch (error) {
-      console.error('Error sending notifications:', error);
-    }
-  };
+  // notifyTiktokByNumber = async (
+  //   oldFollowCount,
+  //   newFollowCount,
+  //   chatIds,
+  //   account,
+  // ) => {
+  //   try {
+  //     if (newFollowCount - oldFollowCount > 0) {
+  //       chatIds.forEach(async (chatId) => {
+  //         return await this.socialBot.sendMessage(
+  //           chatId,
+  //           `Follow alert  🚨:\n\n${newFollowCount - oldFollowCount} followed @${account} tiktok Account`,
+  //         );
+  //       });
+  //     }
+  //     return;
+  //   } catch (error) {
+  //     console.error('Error sending notifications:', error);
+  //   }
+  // };
   //cronJob
 
   // @Cron('*/1 * * * *')

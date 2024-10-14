@@ -17,6 +17,8 @@ export class TiktokAccount {
   oldAccountFollowers: any[];
   @Prop()
   newAccountFollowers: any[];
+  @Prop()
+  alertedFollowers: any[];
 }
 
 export const TiktokAccountSchema = SchemaFactory.createForClass(TiktokAccount);
