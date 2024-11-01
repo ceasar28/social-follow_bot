@@ -328,7 +328,7 @@ export class SocialBotService {
           },
         },
       );
-
+      console.log(validAccount);
       // If valid account data is returned
       if (validAccount.data.status === 'ok') {
         // Prepare to save new account data
@@ -343,7 +343,9 @@ export class SocialBotService {
         await saveInstagramUsername.save();
 
         // Only fetch paginated data if save is successful
+
         await this.fetchInstagramPaginatedData(validAccount.data.data.id);
+
         return {
           trackerChatId: [chatId],
           instagramAccount: username,
@@ -376,25 +378,27 @@ export class SocialBotService {
         },
       );
 
-      const { data } = response.data;
-      const formattedUsers = data.users.map((user) => ({
-        UsersuserId: user.id,
-        username: user.username,
-      }));
+      const { data, status } = response.data;
+      if (status === 'ok') {
+        const formattedUsers = data.users.map((user) => ({
+          UsersuserId: user.id,
+          username: user.username,
+        }));
 
-      // Use findOneAndUpdate with error handling
-      await this.InstagramAccountModel.updateOne(
-        { accountId: userId },
-        {
-          $set: {
-            newAccountFollowers: formattedUsers,
-            oldAccountFollowers: formattedUsers,
+        // Use findOneAndUpdate with error handling
+        await this.InstagramAccountModel.updateOne(
+          { accountId: userId },
+          {
+            $set: {
+              newAccountFollowers: formattedUsers,
+              oldAccountFollowers: formattedUsers,
+            },
           },
-        },
-        // { new: true, useFindAndModify: false },
-      );
+          // { new: true, useFindAndModify: false },
+        );
 
-      console.log('Fetched items:', response.data);
+        console.log('Fetched items:', response.data);
+      }
 
       // if (users.length > 0 && next_cursor > 0) {
       //   // delay in milliseconds before fetching data
@@ -426,32 +430,35 @@ export class SocialBotService {
       );
 
       const { data } = response.data;
-      const formattedUsers = data.users.map((user) => ({
-        UsersuserId: user.id,
-        username: user.username,
-      }));
+      if (data.users.length > 0) {
+        const formattedUsers = data.users.map((user) => ({
+          UsersuserId: user.id,
+          username: user.username,
+        }));
 
-      // Use findOneAndUpdate with error handling
-      await this.InstagramAccountModel.updateOne(
-        { accountId: userId },
-        {
-          $set: {
-            newAccountFollowers: formattedUsers,
+        await this.InstagramAccountModel.updateOne(
+          { accountId: userId },
+          {
+            $set: {
+              newAccountFollowers: formattedUsers,
+            },
           },
-        },
-        //   { new: true, useFindAndModify: false },
-      );
-      const lastupdatedData = await this.InstagramAccountModel.findOne({
-        accountId: userId,
-      });
-      if (lastupdatedData) {
-        await this.notifyInstagram(
-          lastupdatedData.oldAccountFollowers,
-          lastupdatedData.newAccountFollowers,
-          lastupdatedData.trackerChatId,
-          lastupdatedData.instagramAccount,
-          lastupdatedData.alertedFollowers,
+          //   { new: true, useFindAndModify: false },
         );
+
+        const lastupdatedData = await this.InstagramAccountModel.findOne({
+          accountId: userId,
+        });
+        if (lastupdatedData) {
+          await this.notifyInstagram(
+            lastupdatedData.oldAccountFollowers,
+            lastupdatedData.newAccountFollowers,
+            lastupdatedData.trackerChatId,
+            lastupdatedData.instagramAccount,
+            lastupdatedData.alertedFollowers,
+          );
+        }
+        return;
       }
 
       return;
@@ -466,38 +473,21 @@ export class SocialBotService {
       console.log(allAccounts);
 
       if (allAccounts.length > 0) {
+        console.log('calling here');
         await Promise.all(
           allAccounts.map(async (account) => {
-            // Fetch the valid Twitter account information
-            // Fetch the valid instagram account information
-            const validAccount = await this.httpService.axiosRef.post(
-              `https://instagram-scrapper-new.p.rapidapi.com/getUserInfoByUsername?username=${account.instagramAccount}`,
-              {},
-              {
-                headers: {
-                  'Content-Type': 'application/json',
-                  'x-rapidapi-key': process.env.RAPID_API_KEY,
-                  'x-rapidapi-host': process.env.RAPID_HOST,
-                },
-              },
-            );
-
-            if (validAccount.data.status === 'ok') {
-              await this.InstagramAccountModel.updateOne(
-                { instagramAccount: account.instagramAccount },
-                {
-                  follwersCount: validAccount.data.data.follower_count,
-                },
-              );
+            try {
               await this.fetchNewFollowInstagramPaginatedData(
                 account.accountId,
               );
               return;
+            } catch (error) {
+              console.log(error);
             }
-
-            return;
           }),
         );
+
+        return;
       }
       console.log('no account to monitor');
       return;
@@ -522,6 +512,8 @@ export class SocialBotService {
           (oldItem) => oldItem.username === newItem.username,
         );
       });
+
+      console.log('ADDED FOLLOWS :', addedFollows);
 
       // filter to check for already alerted followers
       const nonAlertedFollwers = addedFollows.filter(
@@ -548,7 +540,7 @@ export class SocialBotService {
         await this.InstagramAccountModel.updateOne(
           { instagramAccount: account },
           {
-            $set: { oldAccountFollowers: newArray }, // Set the new followers array
+            $addToSet: { oldAccountFollowers: { $each: newArray } },
             $push: { alertedFollowers: { $each: nonAlertedFollwers } }, // Push each non-alerted follower
           },
         );
@@ -584,11 +576,13 @@ export class SocialBotService {
 
   //cronJob
 
-  // @Cron('*/30 * * * *')
-  @Cron(`${process.env.CRON}`)
+  @Cron('*/1 * * * *')
+  // @Cron(`${process.env.CRON}`)
   async handleInstagramCron() {
+    console.log('calling cron');
     const jobRunning = await this.InstagramJobModel.find();
     if (jobRunning[0].isJobRunning) {
+      console.log('Job is running');
       // If a job is already running, exit early to prevent data pollution
 
       return;
