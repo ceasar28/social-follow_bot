@@ -473,7 +473,6 @@ export class SocialBotService {
       console.log(allAccounts);
 
       if (allAccounts.length > 0) {
-        console.log('calling here');
         await Promise.all(
           allAccounts.map(async (account) => {
             try {
