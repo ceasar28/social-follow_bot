@@ -576,8 +576,8 @@ export class SocialBotService {
 
   //cronJob
 
-  @Cron('*/1 * * * *')
-  // @Cron(`${process.env.CRON}`)
+  // @Cron('*/1 * * * *')
+  @Cron(`${process.env.CRON}`)
   async handleInstagramCron() {
     console.log('calling cron');
     const jobRunning = await this.InstagramJobModel.find();
