@@ -380,7 +380,7 @@ export class SocialBotService {
 
       const { data, status } = response.data;
       if (status === 'ok') {
-        const formattedUsers = data.users.map((user) => ({
+        const formattedUsers = data.users?.map((user) => ({
           UsersuserId: user.id,
           username: user.username,
         }));
@@ -430,8 +430,8 @@ export class SocialBotService {
       );
 
       const { data } = response.data;
-      if (data.users.length > 0) {
-        const formattedUsers = data.users.map((user) => ({
+      if (data.users?.length > 0) {
+        const formattedUsers = data.users?.map((user) => ({
           UsersuserId: user.id,
           username: user.username,
         }));
