@@ -483,24 +483,75 @@ export class SocialBotService {
     }
   };
 
+  // queryNewInstagramFollowers = async (): Promise<void> => {
+  //   try {
+  //     const allAccounts = await this.InstagramAccountModel.find();
+  //     console.log(allAccounts);
+
+  //     if (allAccounts.length > 0) {
+  //       await Promise.all(
+  //         allAccounts.map(async (account) => {
+  //           try {
+  //             await this.fetchNewFollowInstagramPaginatedData(
+  //               account.accountId,
+  //             );
+  //             return;
+  //           } catch (error) {
+  //             console.log(error);
+  //           }
+  //         }),
+  //       );
+
+  //       return;
+  //     }
+  //     console.log('no account to monitor');
+  //     return;
+
+  //     // After updating, send notifications for new followers
+  //   } catch (error) {
+  //     console.error('Error querying new Instagram followers:', error);
+  //     process.exit(1); // Trigger PM2 restart
+  //   }
+  // };
+
   queryNewInstagramFollowers = async (): Promise<void> => {
     try {
       const allAccounts = await this.InstagramAccountModel.find();
       console.log(allAccounts);
 
       if (allAccounts.length > 0) {
+        // Split the accounts into two groups if there are more than 10
+        const midIndex = Math.ceil(allAccounts.length / 2);
+        const firstHalf = allAccounts.slice(0, midIndex);
+        const secondHalf = allAccounts.slice(midIndex);
+
+        // Process the first half
         await Promise.all(
-          allAccounts.map(async (account) => {
+          firstHalf.map(async (account) => {
             try {
               await this.fetchNewFollowInstagramPaginatedData(
                 account.accountId,
               );
-              return;
             } catch (error) {
               console.log(error);
             }
           }),
         );
+
+        // Wait for 2 seconds before processing the second half
+        setTimeout(async () => {
+          await Promise.all(
+            secondHalf.map(async (account) => {
+              try {
+                await this.fetchNewFollowInstagramPaginatedData(
+                  account.accountId,
+                );
+              } catch (error) {
+                console.log(error);
+              }
+            }),
+          );
+        }, 2000); // Delay in milliseconds (2 seconds)
 
         return;
       }
