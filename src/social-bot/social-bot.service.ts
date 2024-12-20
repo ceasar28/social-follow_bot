@@ -39,6 +39,20 @@ export class SocialBotService {
     this.createInstagramJobData();
   }
 
+  // Add global error handling here
+  static initErrorHandling() {
+    process.on('uncaughtException', (err) => {
+      console.error('Uncaught exception:', err);
+      // Optionally, clean up resources before exit
+      process.exit(1); // Trigger PM2 restart
+    });
+
+    process.on('unhandledRejection', (reason) => {
+      console.error('Unhandled promise rejection:', reason);
+      process.exit(1); // Trigger PM2 restart
+    });
+  }
+
   createInstagramJobData = async () => {
     await this.InstagramJobModel.deleteMany({});
     await this.InstagramJobModel.create({ isJobRunning: false });
@@ -409,6 +423,7 @@ export class SocialBotService {
       // }
     } catch (error) {
       console.error('Error fetching data:', error);
+      process.exit(1); // Trigger PM2 restart
     }
   };
 
@@ -464,6 +479,7 @@ export class SocialBotService {
       return;
     } catch (error) {
       console.error('Error fetching data:', error);
+      process.exit(1); // Trigger PM2 restart
     }
   };
 
@@ -494,6 +510,7 @@ export class SocialBotService {
       // After updating, send notifications for new followers
     } catch (error) {
       console.error('Error querying new Instagram followers:', error);
+      process.exit(1); // Trigger PM2 restart
     }
   };
 
@@ -549,6 +566,7 @@ export class SocialBotService {
       }
     } catch (error) {
       console.error('Error sending notifications:', error);
+      process.exit(1); // Trigger PM2 restart
     }
   };
 
@@ -582,6 +600,7 @@ export class SocialBotService {
     const jobRunning = await this.InstagramJobModel.find();
     if (jobRunning[0].isJobRunning) {
       console.log('Job is running');
+      process.exit(1); // Trigger PM2 restart
       // If a job is already running, exit early to prevent data pollution
 
       return;
@@ -599,6 +618,7 @@ export class SocialBotService {
     } catch (error) {
       // Handle any errors that may occur during execution
       console.error('Error in cron job:', error);
+      process.exit(1); // Trigger PM2 restart
     } finally {
       // Reset the flag to indicate the job has completed
       await this.InstagramJobModel.updateOne(
@@ -641,6 +661,10 @@ export class SocialBotService {
       }
     } catch (error) {
       console.error('Error in instagramRemoveTrackerChatIdOrDelete:', error);
+      process.exit(1); // Trigger PM2 restart
     }
   }
 }
+
+// Initialize global error handling
+SocialBotService.initErrorHandling();
