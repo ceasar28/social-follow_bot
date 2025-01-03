@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>modeMIND Token Analyzer & Chat</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f4f4f9;
+            color: #333;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #fff;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        h1 {
+            color: #ffcc00;
+        }
+
+        input,
+        textarea {
+            width: 100%;
+            padding: 10px;
+            margin: 10px 0;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+
+        button {
+            padding: 10px 20px;
+            background-color: #ffcc00;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            color: #333;
+        }
+
+        button:hover {
+            background-color: #e6b800;
+        }
+
+        .result,
+        .chat-container {
+            margin-top: 20px;
+            padding: 20px;
+            background: #f9f9f9;
+            border-radius: 8px;
+        }
+
+        .chat-container {
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .chat-message {
+            margin: 5px 0;
+        }
+
+        .chat-message.user {
+            text-align: right;
+            color: blue;
+        }
+
+        .chat-message.agent {
+            text-align: left;
+            color: green;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>Token Analyzer & Chat with modeMIND</h1>
+
+        <!-- Token Analysis Section -->
+        <div>
+            <h3>Token Analysis</h3>
+            <p>Enter a token address or ticker name to analyze its on-chain data.</p>
+            <input type="text" id="tokenInput" placeholder="Enter token address or ticker name" />
+            <br />
+            <button onclick="analyzeToken()">Analyze Token</button>
+            <div id="result" class="result"></div>
+        </div>
+
+        <!-- Chat Section -->
+        <div>
+            <h3>Chat with modeMIND</h3>
+            <div id="chatContainer" class="chat-container"></div>
+            <textarea id="chatInput" placeholder="Type your message..."></textarea>
+            <button onclick="sendMessage()">Send</button>
+        </div>
+    </div>
+
+    <script>
+        async function analyzeToken() {
+            const tokenInput = document.getElementById('tokenInput').value;
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = ''; // Clear previous results
+
+            if (!tokenInput) {
+                resultDiv.innerHTML = '<p style="color: red;">Please enter a token address or ticker name.</p>';
+                return;
+            }
+
+            try {
+                // Replace with your API endpoint
+                const response = await fetch(`https://api.yourbackend.com/token-analysis?query=${encodeURIComponent(tokenInput)}`);
+                const data = await response.json();
+
+                if (response.ok) {
+                    resultDiv.innerHTML = `
+            <h4>Analysis for: ${data.tokenName} (${data.tokenTicker})</h4>
+            <p><strong>On-Chain Data:</strong> ${data.onChainData}</p>
+            <p><strong>Projections:</strong> ${data.projections}</p>
+            <p><strong>Market Cap:</strong> ${data.marketCap}</p>
+            <p><strong>Circulating Supply:</strong> ${data.circulatingSupply}</p>
+          `;
+                } else {
+                    resultDiv.innerHTML = `<p style="color: red;">${data.error || 'Unable to fetch data.'}</p>`;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `<p style="color: red;">Error: ${error.message}</p>`;
+            }
+        }
+
+        async function sendMessage() {
+            const chatInput = document.getElementById('chatInput');
+            const chatContainer = document.getElementById('chatContainer');
+
+            const userMessage = chatInput.value.trim();
+            if (!userMessage) return;
+
+            // Display user's message
+            const userMsgDiv = document.createElement('div');
+            userMsgDiv.className = 'chat-message user';
+            userMsgDiv.textContent = userMessage;
+            chatContainer.appendChild(userMsgDiv);
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+
+            chatInput.value = ''; // Clear input
+
+            try {
+                // Replace with your chatbot API endpoint
+                const response = await fetch('https://api.yourbackend.com/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message: userMessage }),
+                });
+                const data = await response.json();
+
+                if (response.ok) {
+                    // Display agent's response
+                    const agentMsgDiv = document.createElement('div');
+                    agentMsgDiv.className = 'chat-message agent';
+                    agentMsgDiv.textContent = data.response;
+                    chatContainer.appendChild(agentMsgDiv);
+                    chatContainer.scrollTop = chatContainer.scrollHeight;
+                } else {
+                    throw new Error(data.error || 'Error getting response.');
+                }
+            } catch (error) {
+                const errorMsgDiv = document.createElement('div');
+                errorMsgDiv.className = 'chat-message agent';
+                errorMsgDiv.textContent = `Error: ${error.message}`;
+                chatContainer.appendChild(errorMsgDiv);
+                chatContainer.scrollTop = chatContainer.scrollHeight;
+            }
+        }
+    </script>
+</body>
+
+</html>
